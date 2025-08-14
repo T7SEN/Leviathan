@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { Client, GatewayIntentBits, Events } from "discord.js";
+import { registerInteractionHandler } from "./events/interaction-create.js";
 
 function requireEnv(key: string): string {
   const v = process.env[key];
@@ -31,6 +32,8 @@ async function main() {
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
   });
+
+  await registerInteractionHandler(client);
 
   client.once(Events.ClientReady, (c) => {
     log("info", `Leviathan online as ${c.user.tag}`);
