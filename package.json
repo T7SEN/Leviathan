@@ -11,6 +11,7 @@
     "build": "tsc -p .",
     "start": "node dist/index.js",
     "deploy:commands": "tsx scripts/deploy-commands.ts",
+    "dev:deploy": "tsx scripts/watch-deploy.ts",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.5.0",
+    "chokidar": "^4.0.3",
     "eslint": "^9.10.0",
     "tsx": "^4.7.0",
     "typescript": "^5.5.0"
