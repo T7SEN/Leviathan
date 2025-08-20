@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { registerInteractionHandler } from "./events/interaction-create.js";
+import { registerMessageHandler } from "./events/message-create.js";
+import { installGlobalErrorLogger } from "./lib/global-error-logger.js";
+import { registerVoiceHandler } from "./events/voice-state.js";
+import { installObservability } from "./lib/observability.js";
+import { startLeaderboardWorker } from "./features/leaderboard/rollup.js";
 
 function requireEnv(key: string): string {
   const v = process.env[key];
@@ -30,21 +35,24 @@ async function main() {
   const token = requireEnv("DISCORD_TOKEN");
 
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildVoiceStates,
+    ],
   });
 
+  installGlobalErrorLogger(client);
   await registerInteractionHandler(client);
+  registerMessageHandler(client);
+  registerVoiceHandler(client);
+  installObservability(client);
+  startLeaderboardWorker();
 
   client.once(Events.ClientReady, (c) => {
     log("info", `Leviathan online as ${c.user.tag}`);
-  });
-
-  process.on("unhandledRejection", (err) => {
-    log("error", `unhandledRejection: ${String(err)}`);
-  });
-
-  process.on("uncaughtException", (err) => {
-    log("error", `uncaughtException: ${String(err)}`);
   });
 
   await client.login(token);

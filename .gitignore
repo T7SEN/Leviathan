@@ -137,3 +137,7 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+db/leviathan.sqlite-shm
+db/leviathan.sqlite-wal
+.vscode

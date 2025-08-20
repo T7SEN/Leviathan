@@ -1,7 +1,14 @@
-import { Client, Events, type ChatInputCommandInteraction, MessageFlags } from "discord.js";
+import {
+  Client,
+  Events,
+  type ChatInputCommandInteraction,
+  MessageFlags,
+} from "discord.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { actionLogger } from "../lib/action-logger.js";
+import { metrics } from "../obs/metrics.js";
 
 type CommandModule = {
   data: { name: string; toJSON?: () => unknown };
@@ -60,29 +67,49 @@ export async function registerInteractionHandler(client: Client) {
 
   client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
-
+    metrics.inc(`cmd.${interaction.commandName}.calls`);
     const cmd = commands.get(interaction.commandName);
     if (!cmd) {
       const msg = "Unknown command. Did you deploy the latest set?";
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+        await interaction.followUp({
+          content: msg,
+          flags: MessageFlags.Ephemeral,
+        });
       } else {
-        await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+        await interaction.reply({
+          content: msg,
+          flags: MessageFlags.Ephemeral,
+        });
       }
       return;
     }
 
     try {
       await cmd.execute(interaction);
+      await actionLogger(interaction.client).logCommand(interaction, "ok");
     } catch (err) {
+      metrics.inc(`cmd.${interaction.commandName}.errors`);
+      metrics.event("error");
       const msg = "Command failed.";
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: msg, flags: MessageFlags.Ephemeral });
+        await interaction.followUp({
+          content: msg,
+          flags: MessageFlags.Ephemeral,
+        });
       } else {
-        await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+        await interaction.reply({
+          content: msg,
+          flags: MessageFlags.Ephemeral,
+        });
       }
       // eslint-disable-next-line no-console
       console.error("command error:", err);
+      await actionLogger(interaction.client).logCommand(
+        interaction,
+        "error",
+        err
+      );
     }
   });
 }

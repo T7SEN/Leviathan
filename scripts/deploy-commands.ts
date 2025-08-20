@@ -16,21 +16,29 @@ function requireEnv(key: string): string {
 type CommandJson = RESTPostAPIChatInputApplicationCommandsJSONBody;
 
 async function readCommandFiles(): Promise<string[]> {
-  const dir = path.resolve("src/commands");
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isFile())
-      .map((e) => e.name)
-      .filter((n) => n.endsWith(".ts") || n.endsWith(".js"))
-      .filter((n) => !n.endsWith(".d.ts"))
-      .map((n) => path.join(dir, n));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
+  const root = path.resolve("src/commands");
+  const files: string[] = [];
+  async function walk(dir: string): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
     }
-    throw err;
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        await walk(p);
+      } else if (e.isFile()) {
+        if ((p.endsWith(".ts") || p.endsWith(".js")) && !p.endsWith(".d.ts")) {
+          files.push(p);
+        }
+      }
+    }
   }
+  await walk(root);
+  return files;
 }
 
 async function loadCommands(): Promise<CommandJson[]> {
@@ -47,6 +55,10 @@ async function loadCommands(): Promise<CommandJson[]> {
       cmds.push(json as CommandJson);
     }
   }
+  console.log(
+    "[deploy] commands:",
+    cmds.map((c) => c.name).join(", ") || "(none)"
+  );
   return cmds;
 }
 

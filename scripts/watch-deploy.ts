@@ -19,6 +19,7 @@ function runDeploy(): Promise<void> {
 
 let queued = false;
 let running = false;
+let ready = false;
 
 async function trigger() {
   if (running) {
@@ -48,18 +49,38 @@ function debounce<T extends (...args: any[]) => void>(fn: T, ms: number) {
 }
 
 async function main() {
-  console.log("[watch] watching src/commands");
-  await trigger(); // initial deploy
-  const watcher = chokidar.watch("src/commands/**/*.{ts,js}", {
-    ignoreInitial: true,
+  console.log("[watch] watching dir: src/commands (recursive)");
+  const watcher = chokidar.watch("src/commands", {
+    persistent: true,
+    ignoreInitial: false, // gate with ready
+    depth: 99,
+    ignored: ["**/*.d.ts", "**/*.map", "**/node_modules/**"],
+    awaitWriteFinish: { stabilityThreshold: 700, pollInterval: 120 },
   });
-  const debounced = debounce(trigger, 800);
+  const debounced = debounce(trigger, 700);
+  const onFile = (evt: string) => (file: string) => {
+    if (!ready) return;
+    const lower = file.toLowerCase();
+    if (!(lower.endsWith(".ts") || lower.endsWith(".js"))) return;
+    console.log(`[watch] ${evt}: ${file}`);
+    debounced();
+  };
+  const onDir = (evt: string) => (dir: string) => {
+    if (!ready) return;
+    console.log(`[watch] ${evt}: ${dir}`);
+    debounced();
+  };
   watcher
-    .on("add", debounced)
-    .on("change", debounced)
-    .on("unlink", debounced)
-    .on("error", (err) => {
-      console.error("[watch] error:", err);
+    .on("add", onFile("add"))
+    .on("change", onFile("change"))
+    .on("unlink", onFile("unlink"))
+    .on("addDir", onDir("addDir"))
+    .on("unlinkDir", onDir("unlinkDir"))
+    .on("error", (err) => console.error("[watch] error:", err))
+    .on("ready", async () => {
+      ready = true;
+      console.log("[watch] ready → initial deploy");
+      await trigger();
     });
 }
 
