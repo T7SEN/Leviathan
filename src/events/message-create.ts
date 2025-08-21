@@ -1,4 +1,10 @@
-import { Client, Events, type Message } from "discord.js";
+import {
+  Client,
+  Events,
+  type Message,
+  AttachmentBuilder,
+  EmbedBuilder,
+} from "discord.js";
 import { engine } from "../features/leveling/service.js";
 import { actionLogger } from "../lib/action-logger.js";
 import { applyLevelRewards } from "../features/leveling/role-rewards.js";
@@ -8,8 +14,13 @@ import { shouldCountMessage } from "../features/antispam/runtime.js";
 import { getMultiplierForRoles } from "../features/leveling/role-multipliers.js";
 import { applyStreakAndComputeBonus } from "../features/leveling/streaks.js";
 import { metrics } from "../obs/metrics.js";
-import { getFlag, ANNOUNCE_LEVELUPS } from "../lib/global-settings.js";
+import {
+  getFlag,
+  ANNOUNCE_LEVELUPS,
+  ENABLE_RANKCARDS,
+} from "../lib/global-settings.js";
 import { sendChannelEmbedText } from "../lib/embeds.js";
+import { renderRankCard } from "../features/rankcard/renderer.js";
 import {
   claimMessageOnce,
   finalizeMessageAward,
@@ -129,12 +140,30 @@ export function registerMessageHandler(client: Client) {
           grant.granted.length > 0
             ? ` • granted: ${grant.granted.map((id) => `<@&${id}>`).join(", ")}`
             : "";
+        const rcDefault = (process.env.ENABLE_RANKCARDS ?? "1") !== "0";
         if (getFlag(ANNOUNCE_LEVELUPS, true)) {
-          await sendChannelEmbedText(
-            m.channel,
-            "Level up",
-            `<@${m.author.id}> reached level ${lvl}${roles}`
-          );
+          if (getFlag(ENABLE_RANKCARDS, rcDefault)) {
+            const png = await renderRankCard({
+              guildId: m.guildId!,
+              user: m.author,
+              level: lvl,
+              totalXp: res.profile.xp,
+              rank: 1, // rank not critical for announce
+            });
+            const file = new AttachmentBuilder(png, { name: "rank.png" });
+            const embed = new EmbedBuilder()
+              .setTitle("Level up")
+              .setDescription(`<@${m.author.id}> reached level ${lvl}${roles}`)
+              .setImage("attachment://rank.png")
+              .setColor(0x5865f2);
+            await (m.channel as any).send({ embeds: [embed], files: [file] });
+          } else {
+            await sendChannelEmbedText(
+              m.channel,
+              "Level up",
+              `<@${m.author.id}> reached level ${lvl}${roles}`
+            );
+          }
         }
         await actionLogger(m.client).logLevelUp({
           userId: m.author.id,

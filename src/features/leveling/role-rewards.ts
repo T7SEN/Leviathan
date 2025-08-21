@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import type { Client, Guild, Role } from "discord.js";
 import { PermissionFlagsBits } from "discord.js";
 import { resolvedDbPath } from "./sqlite-store.js";
+import { metrics } from "../../obs/metrics.js";
 
 type LevelRole = { level: number; roleId: string };
 
@@ -53,6 +54,11 @@ export function listLevelRoles(guildId: string): LevelRole[] {
   return listStmt.all(guildId) as LevelRole[];
 }
 
+export function getLevelRoleIds(guildId: string): string[] {
+  const rows = listLevelRoles(guildId);
+  return rows.map((r) => r.roleId);
+}
+
 async function fetchRole(g: Guild, roleId: string): Promise<Role | null> {
   const cached = g.roles.cache.get(roleId) || null;
   if (cached) return cached;
@@ -69,6 +75,70 @@ function canManageRole(g: Guild, role: Role): boolean {
   if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) return false;
   // must be strictly higher than target role
   return me.roles.highest.position > role.position;
+}
+
+/**
+ * Remove all configured level roles from the given users.
+ * Returns how many members changed and how many role removals were issued.
+ */
+export async function stripLevelRoles(
+  client: Client,
+  guildId: string,
+  userIds: string[]
+): Promise<{ members: number; removals: number }> {
+  const g = await client.guilds.fetch(guildId);
+  const levelRoleIds = new Set(getLevelRoleIds(guildId));
+  if (levelRoleIds.size === 0) return { members: 0, removals: 0 };
+
+  let membersChanged = 0;
+  let totalRemovals = 0;
+
+  for (const uid of userIds) {
+    let m;
+    try {
+      m = await g.members.fetch(uid);
+    } catch {
+      continue;
+    }
+    const toRemove = m.roles.cache
+      .filter((r) => levelRoleIds.has(r.id))
+      .map((r) => r.id);
+    if (toRemove.length === 0) continue;
+    try {
+      await m.roles.remove(toRemove, "Level reset");
+      membersChanged += 1;
+      totalRemovals += toRemove.length;
+    } catch {}
+  }
+
+  try {
+    metrics.inc("roles.strip.members", membersChanged);
+    metrics.inc("roles.strip.removals", totalRemovals);
+  } catch {}
+
+  return { members: membersChanged, removals: totalRemovals };
+}
+
+/**
+ * Remove all level roles from everyone currently holding any of them.
+ */
+export async function stripLevelRolesFromGuild(
+  client: Client,
+  guildId: string
+): Promise<{ members: number; removals: number }> {
+  const g = await client.guilds.fetch(guildId);
+  const levelRoleIds = getLevelRoleIds(guildId);
+  if (levelRoleIds.length === 0) return { members: 0, removals: 0 };
+
+  // Collect unique user IDs from all level roles
+  const userIds = new Set<string>();
+  for (const rid of levelRoleIds) {
+    try {
+      const role = await g.roles.fetch(rid);
+      role?.members.forEach((m) => userIds.add(m.id));
+    } catch {}
+  }
+  return stripLevelRoles(client, guildId, Array.from(userIds));
 }
 
 export async function applyLevelRewards(

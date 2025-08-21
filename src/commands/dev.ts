@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import { getFlag, setFlag, ANNOUNCE_LEVELUPS } from "../lib/global-settings.js";
 import { replyEmbedText } from "../lib/embeds.js";
+import { ENABLE_RANKCARDS } from "../lib/global-settings.js";
 
 export const data = new SlashCommandBuilder()
   .setName("dev")
@@ -26,6 +27,21 @@ export const data = new SlashCommandBuilder()
             { name: "off", value: "off" }
           )
       )
+  )
+  .addSubcommand((sc) =>
+    sc
+      .setName("rankcard")
+      .setDescription("Enable or disable rank-card images")
+      .addStringOption((o) =>
+        o
+          .setName("state")
+          .setDescription("on | off")
+          .setRequired(true)
+          .addChoices(
+            { name: "on", value: "on" },
+            { name: "off", value: "off" }
+          )
+      )
   );
 
 export async function execute(i: ChatInputCommandInteraction) {
@@ -33,7 +49,20 @@ export async function execute(i: ChatInputCommandInteraction) {
 
   if (sub === "show") {
     const on = getFlag(ANNOUNCE_LEVELUPS, true);
-    await replyEmbedText(i, "Dev", `announce_levelups=${on}`, true);
+    const rc = getFlag(ENABLE_RANKCARDS, true);
+    await replyEmbedText(
+      i,
+      "Dev",
+      `announce_levelups=${on}\nrankcards=${rc}`,
+      true
+    );
+    return;
+  }
+
+  if (sub === "rankcard") {
+    const on = i.options.getString("state", true) === "on";
+    setFlag(ENABLE_RANKCARDS, on);
+    await replyEmbedText(i, "Dev", `rankcards=${on}`, true);
     return;
   }
 

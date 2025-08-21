@@ -10,6 +10,7 @@ db.exec(`
 `);
 
 export const ANNOUNCE_LEVELUPS = "announce_levelups";
+export const ENABLE_RANKCARDS = "enable_rankcards";
 
 export function getFlag(key: string, def: boolean): boolean {
   try {

@@ -11,6 +11,7 @@ import {
   setActiveSeasonId,
 } from "../features/seasons/store.js";
 import { replyEmbedText } from "../lib/embeds.js";
+import { stripLevelRolesFromGuild } from "../features/leveling/role-rewards.js";
 
 export const data = new SlashCommandBuilder()
   .setName("season")
@@ -91,9 +92,14 @@ export async function execute(i: ChatInputCommandInteraction) {
     if (!ok) return ereply(i, "aborted");
     const name = i.options.getString("name") ?? null;
     const r = await startNewSeason(i.guildId, name);
-    return ereply(
+    const stats = await stripLevelRolesFromGuild(i.client, i.guildId!);
+    return replyEmbedText(
       i,
-      `season=${r.seasonId} archived=${r.archived} ` + `active reset complete`
+      "Season",
+      `season=${r.seasonId} archived=${r.archived}\n` +
+        `active reset complete\n` +
+        `roles removed: ${stats.removals} from ${stats.members} member(s)`,
+      true
     );
   }
 
