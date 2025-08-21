@@ -140,6 +140,7 @@ export async function flushQueue(
           amount: res.awarded,
           leveledUp: res.leveledUp,
           levelAfter: res.profile.level,
+          qty: 1,
         });
         if (res.leveledUp) {
           try {
@@ -166,6 +167,7 @@ export async function flushQueue(
             amount: res.awarded,
             leveledUp: res.leveledUp,
             levelAfter: res.profile.level,
+            qty: 1,
           });
         }
         if (res.leveledUp) {

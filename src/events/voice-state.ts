@@ -110,6 +110,7 @@ async function awardDue(
       amount: res.awarded,
       leveledUp: res.leveledUp,
       levelAfter: res.profile.level,
+      qty: elapsedMin,
     });
   } else {
     metrics.inc("xp.award.voice.zero");
@@ -139,6 +140,7 @@ async function awardDue(
           amount: extra.awarded,
           leveledUp: extra.leveledUp,
           levelAfter: extra.profile.level,
+          qty: 0, // bonus XP, no extra minutes
         });
       }
     }

@@ -136,6 +136,7 @@ export function registerMessageHandler(client: Client) {
         amount: res.awarded,
         leveledUp: res.leveledUp,
         levelAfter: res.profile.level,
+        qty: 1,
       });
     } else {
       metrics.inc("xp.award.msg.zero");
@@ -163,6 +164,7 @@ export function registerMessageHandler(client: Client) {
             amount: extra.awarded,
             leveledUp: extra.leveledUp,
             levelAfter: extra.profile.level,
+            qty: 1,
           });
         }
         if (extra.leveledUp && extra.profile.level > res.profile.level) {
