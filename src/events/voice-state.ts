@@ -11,6 +11,8 @@ import { actionLogger } from "../lib/action-logger.js";
 import { getMultiplierForRoles } from "../features/leveling/role-multipliers.js";
 import { applyStreakAndComputeBonus } from "../features/leveling/streaks.js";
 import { metrics } from "../obs/metrics.js";
+import { getFlag, MAINTENANCE_MODE } from "../lib/global-settings.js";
+import { enqueueVoiceBucket } from "../features/maintenance/queue.js";
 import {
   claimVoiceMinutes,
   pruneLedger,
@@ -68,6 +70,14 @@ async function awardDue(
     Array.from(member.roles.cache.keys())
   );
   const perMin = Math.floor(policy.xpPerMinute * factor);
+  if (getFlag(MAINTENANCE_MODE, false)) {
+    for (let b = startBucket; b <= endBucket; b += 1) {
+      enqueueVoiceBucket(sess.guildId, sess.userId, b, perMin, b * 60_000);
+    }
+    sess.lastAwardMs = nowMs;
+    metrics.observe("maint.queue.voice", elapsedMin);
+    return;
+  }
   const buckets: number[] = [];
   for (let b = startBucket; b <= endBucket; b += 1) buckets.push(b);
   const claimed = claimVoiceMinutes(

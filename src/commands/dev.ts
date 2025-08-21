@@ -3,7 +3,12 @@ import {
   type ChatInputCommandInteraction,
   MessageFlags,
 } from "discord.js";
-import { getFlag, setFlag, ANNOUNCE_LEVELUPS } from "../lib/global-settings.js";
+import {
+  getFlag,
+  setFlag,
+  ANNOUNCE_LEVELUPS,
+  MAINTENANCE_MODE,
+} from "../lib/global-settings.js";
 import { replyEmbedText } from "../lib/embeds.js";
 import { ENABLE_RANKCARDS } from "../lib/global-settings.js";
 
@@ -50,10 +55,11 @@ export async function execute(i: ChatInputCommandInteraction) {
   if (sub === "show") {
     const on = getFlag(ANNOUNCE_LEVELUPS, true);
     const rc = getFlag(ENABLE_RANKCARDS, true);
+    const mm = getFlag(MAINTENANCE_MODE, false);
     await replyEmbedText(
       i,
       "Dev",
-      `announce_levelups=${on}\nrankcards=${rc}`,
+      `announce_levelups=${on}\nrankcards=${rc}\nmaintenance=${mm}`,
       true
     );
     return;

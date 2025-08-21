@@ -4,6 +4,7 @@ import {
   type ChatInputCommandInteraction,
   type TextBasedChannel,
 } from "discord.js";
+import { safeSend } from "./discord-retry.js";
 
 const DEFAULT_COLOR = 0x5865f2;
 
@@ -56,17 +57,7 @@ export async function sendChannelEmbedText(
   text: string
 ) {
   if (!("send" in ch)) return;
-  const sender = ch as unknown as {
-    send: (opts: {
-      embeds: any[];
-      allowedMentions: {
-        users: string[];
-        roles: string[];
-        repliedUser: boolean;
-      };
-    }) => Promise<unknown>;
-  };
-  return sender.send({
+  return safeSend(ch, {
     embeds: [makeEmbed(title, text)],
     allowedMentions: { users: [], roles: [], repliedUser: false },
   });

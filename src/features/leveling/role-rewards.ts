@@ -3,6 +3,7 @@ import type { Client, Guild, Role } from "discord.js";
 import { PermissionFlagsBits } from "discord.js";
 import { resolvedDbPath } from "./sqlite-store.js";
 import { metrics } from "../../obs/metrics.js";
+import { safeAddRole, safeRemoveRoles } from "../../lib/discord-retry.js";
 
 type LevelRole = { level: number; roleId: string };
 
@@ -165,22 +166,18 @@ export async function applyLevelRewards(
       if (!role) continue;
       if (!canManageRole(g, role)) continue;
       try {
-        await member.roles.remove(role);
+        await safeRemoveRoles(member, [role], "Level change");
         removed.push(role.id);
-      } catch {
-        // ignore failure
-      }
+      } catch {}
     }
     // then grant target if missing
     if (!member.roles.cache.has(target.roleId)) {
       const role = await fetchRole(g, target.roleId);
       if (role && canManageRole(g, role)) {
         try {
-          await member.roles.add(role);
+          await safeAddRole(member, role, "Level reward");
           granted.push(role.id);
-        } catch {
-          // ignore failure
-        }
+        } catch {}
       }
     }
   }

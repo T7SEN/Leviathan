@@ -15,10 +15,12 @@ import { getMultiplierForRoles } from "../features/leveling/role-multipliers.js"
 import { applyStreakAndComputeBonus } from "../features/leveling/streaks.js";
 import { getActiveSeasonId } from "../features/seasons/store.js";
 import { metrics } from "../obs/metrics.js";
+import { enqueueMessageAward } from "../features/maintenance/queue.js";
 import {
   getFlag,
   ANNOUNCE_LEVELUPS,
   ENABLE_RANKCARDS,
+  MAINTENANCE_MODE,
 } from "../lib/global-settings.js";
 import { sendChannelEmbedText } from "../lib/embeds.js";
 import { renderRankCard } from "../features/rankcard/renderer.js";
@@ -68,6 +70,30 @@ export function registerMessageHandler(client: Client) {
       metrics.inc(`msg.reject.${gate.reason ?? "blocked"}`);
       return;
     }
+
+    // maintenance: enqueue and exit
+    if (getFlag(MAINTENANCE_MODE, false)) {
+      const factor = getMultiplierForRoles(
+        m.guildId!,
+        Array.from(member.roles.cache.keys())
+      );
+      const baseMin = Math.floor(cfg.xpMin * factor);
+      const baseMax = Math.max(baseMin, Math.floor(cfg.xpMax * factor));
+      enqueueMessageAward(
+        m.guildId!,
+        m.author.id,
+        m.id,
+        {
+          minIntervalMs: cfg.minIntervalMs,
+          xpPerMessageMin: baseMin,
+          xpPerMessageMax: baseMax,
+        },
+        Date.now()
+      );
+      metrics.inc("maint.queue.msg");
+      return;
+    }
+
     // idempotency: one award per message ID
     if (!claimMessageOnce(m.guildId!, m.id, m.author.id)) {
       metrics.inc("msg.reject.duplicate");

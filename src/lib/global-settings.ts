@@ -31,3 +31,5 @@ export function setFlag(key: string, val: boolean): void {
 	`
   ).run(key, val ? "1" : "0");
 }
+
+export const MAINTENANCE_MODE = "maintenance_mode";
