@@ -13,6 +13,7 @@ import { getAntiSpamConfig } from "../features/antispam/config.js";
 import { shouldCountMessage } from "../features/antispam/runtime.js";
 import { getMultiplierForRoles } from "../features/leveling/role-multipliers.js";
 import { applyStreakAndComputeBonus } from "../features/leveling/streaks.js";
+import { getActiveSeasonId } from "../features/seasons/store.js";
 import { metrics } from "../obs/metrics.js";
 import {
   getFlag,
@@ -143,12 +144,15 @@ export function registerMessageHandler(client: Client) {
         const rcDefault = (process.env.ENABLE_RANKCARDS ?? "1") !== "0";
         if (getFlag(ANNOUNCE_LEVELUPS, true)) {
           if (getFlag(ENABLE_RANKCARDS, rcDefault)) {
+            const sid = getActiveSeasonId(m.guildId!);
             const png = await renderRankCard({
               guildId: m.guildId!,
               user: m.author,
               level: lvl,
               totalXp: res.profile.xp,
               rank: 1, // rank not critical for announce
+              seasonId: sid > 0 ? sid : null,
+              seasonIconUrl: process.env.RANKCARD_SEASON_ICON_URL || null,
             });
             const file = new AttachmentBuilder(png, { name: "rank.png" });
             const embed = new EmbedBuilder()

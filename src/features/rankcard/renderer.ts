@@ -28,6 +28,7 @@ type Inputs = {
   roleMultiplier?: number | null; // e.g. 1.2
   seasonLabel?: string | null; // e.g. 'S3 • Spring'
   seasonIconUrl?: string | null; // optional small emblem
+  seasonId?: number | null; // draws "S#" badge on avatar
 };
 
 function clamp(n: number, lo: number, hi: number) {
@@ -62,6 +63,19 @@ export async function renderRankCard(inp: Inputs): Promise<Buffer> {
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
 
+  // colors
+  const theme = style.theme;
+  const fg = theme === "light" ? "#111827" : "#f9fafb";
+  const sub = theme === "light" ? "#374151" : "#9ca3af";
+  const accent = "#5865f2";
+  // theme-aware badges
+  const badgeFill = theme === "light" ? "#10b981" : "#34d399";
+  const badgeText = theme === "light" ? "#0b1b13" : "#052016";
+  const seasonFill = theme === "light" ? "#374151" : "#f9fafb";
+  const seasonText = theme === "light" ? "#f9fafb" : "#111827";
+  const seasonBadgeFill = theme === "light" ? "#374151" : "#f9fafb";
+  const seasonBadgeText = theme === "light" ? "#f9fafb" : "#111827";
+
   // background
   ctx.fillStyle = style.theme === "light" ? "#f3f4f6" : "#111827";
   ctx.fillRect(0, 0, W, H);
@@ -88,16 +102,50 @@ export async function renderRankCard(inp: Inputs): Promise<Buffer> {
   if (av) ctx.drawImage(av as any, ax, ay, AV, AV);
   ctx.restore();
 
-  // colors
-  const theme = style.theme;
-  const fg = theme === "light" ? "#111827" : "#f9fafb";
-  const sub = theme === "light" ? "#374151" : "#9ca3af";
-  const accent = "#5865f2";
-  // theme-aware badges
-  const badgeFill = theme === "light" ? "#10b981" : "#34d399";
-  const badgeText = theme === "light" ? "#0b1b13" : "#052016";
-  const seasonFill = theme === "light" ? "#374151" : "#f9fafb";
-  const seasonText = theme === "light" ? "#e5e7eb" : "#111827";
+  // seasonal circular badge over avatar (bottom-right)
+  if ((inp.seasonId && inp.seasonId > 0) || inp.seasonIconUrl) {
+    const S = 56;
+    const pad = 8;
+    const bx = ax + AV - S + pad;
+    const by = ay + AV - S + pad;
+    const r = S / 2;
+    // base circle
+    ctx.fillStyle = seasonBadgeFill;
+    ctx.beginPath();
+    ctx.arc(bx + r, by + r, r, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+    // icon inside if provided
+    let drewIcon = false;
+    if (inp.seasonIconUrl) {
+      const em = await loadAnyImage(inp.seasonIconUrl);
+      if (em) {
+        const inset = 8;
+        const sz = S - inset * 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(bx + r, by + r, r - inset, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(em as any, bx + inset, by + inset, sz, sz);
+        ctx.restore();
+        drewIcon = true;
+      }
+    }
+    // fallback: text "S#"
+    if (!drewIcon && inp.seasonId && inp.seasonId > 0) {
+      const label = `S${inp.seasonId}`;
+      ctx.fillStyle = seasonBadgeText;
+      const prevA = ctx.textAlign,
+        prevB = ctx.textBaseline;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = 'bold 22px "Noto Sans","Segoe UI",Arial';
+      ctx.fillText(label, bx + r, by + r);
+      ctx.textAlign = prevA;
+      ctx.textBaseline = prevB;
+    }
+  }
 
   // username
   const nameX = 272;

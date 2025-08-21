@@ -85,6 +85,7 @@ export async function execute(i: ChatInputCommandInteraction) {
     roleMultiplier,
     seasonLabel,
     seasonIconUrl: process.env.RANKCARD_SEASON_ICON_URL || null,
+    seasonId: activeId > 0 ? activeId : null,
   });
 
   const file = new AttachmentBuilder(png, { name: "rank.png" });
