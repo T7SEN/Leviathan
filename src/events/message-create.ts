@@ -1,3 +1,4 @@
+import { logXpEvent } from "../features/leveling/xp-journal.js";
 import {
   Client,
   Events,
@@ -127,6 +128,15 @@ export function registerMessageHandler(client: Client) {
       metrics.inc("xp.award.msg.count");
       metrics.observe("xp.award.msg", res.awarded);
       markLeaderboardDirty(m.guildId!);
+      logXpEvent({
+        guildId: m.guildId!,
+        userId: m.author.id,
+        createdMs: Date.now(),
+        source: "msg",
+        amount: res.awarded,
+        leveledUp: res.leveledUp,
+        levelAfter: res.profile.level,
+      });
     } else {
       metrics.inc("xp.award.msg.zero");
     }
@@ -143,7 +153,18 @@ export function registerMessageHandler(client: Client) {
           m.author.id,
           st.bonus
         );
-        if (extra.awarded > 0) markLeaderboardDirty(m.guildId!);
+        if (extra.awarded > 0) {
+          markLeaderboardDirty(m.guildId!);
+          logXpEvent({
+            guildId: m.guildId!,
+            userId: m.author.id,
+            createdMs: Date.now(),
+            source: "msg",
+            amount: extra.awarded,
+            leveledUp: extra.leveledUp,
+            levelAfter: extra.profile.level,
+          });
+        }
         if (extra.leveledUp && extra.profile.level > res.profile.level) {
           await applyLevelRewards(
             m.client,

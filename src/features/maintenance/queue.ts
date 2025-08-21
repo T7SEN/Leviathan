@@ -1,3 +1,4 @@
+import { logXpEvent } from "../leveling/xp-journal.js";
 import Database from "better-sqlite3";
 import type { Client } from "discord.js";
 import { resolvedDbPath } from "../leveling/sqlite-store.js";
@@ -131,6 +132,15 @@ export async function flushQueue(
         );
         finalizeMessageAward(guildId, r.key, res.awarded);
         markLeaderboardDirty(guildId);
+        logXpEvent({
+          guildId,
+          userId: r.user_id,
+          createdMs: r.created_ms,
+          source: "msg",
+          amount: res.awarded,
+          leveledUp: res.leveledUp,
+          levelAfter: res.profile.level,
+        });
         if (res.leveledUp) {
           try {
             await applyLevelRewards(
@@ -146,7 +156,18 @@ export async function flushQueue(
         const when = Number(p.bucket) * 60_000;
         const amt = Number(p.perMinute);
         const res = await engine.awardRawXp(guildId, r.user_id, amt, when);
-        if (res.awarded > 0) markLeaderboardDirty(guildId);
+        if (res.awarded > 0) {
+          markLeaderboardDirty(guildId);
+          logXpEvent({
+            guildId,
+            userId: r.user_id,
+            createdMs: when,
+            source: "voice",
+            amount: res.awarded,
+            leveledUp: res.leveledUp,
+            levelAfter: res.profile.level,
+          });
+        }
         if (res.leveledUp) {
           try {
             await applyLevelRewards(

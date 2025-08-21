@@ -1,3 +1,4 @@
+import { logXpEvent } from "../features/leveling/xp-journal.js";
 import {
   Client,
   Events,
@@ -101,6 +102,15 @@ async function awardDue(
   if (res.awarded > 0) {
     metrics.inc("xp.award.voice.count");
     metrics.observe("xp.award.voice", res.awarded);
+    logXpEvent({
+      guildId: sess.guildId,
+      userId: sess.userId,
+      createdMs: nowMs,
+      source: "voice",
+      amount: res.awarded,
+      leveledUp: res.leveledUp,
+      levelAfter: res.profile.level,
+    });
   } else {
     metrics.inc("xp.award.voice.zero");
   }
@@ -119,7 +129,18 @@ async function awardDue(
         st.bonus,
         nowMs
       );
-      if (extra.awarded > 0) markLeaderboardDirty(sess.guildId);
+      if (extra.awarded > 0) {
+        markLeaderboardDirty(sess.guildId);
+        logXpEvent({
+          guildId: sess.guildId,
+          userId: sess.userId,
+          createdMs: nowMs,
+          source: "voice",
+          amount: extra.awarded,
+          leveledUp: extra.leveledUp,
+          levelAfter: extra.profile.level,
+        });
+      }
     }
   }
   sess.lastAwardMs += elapsedMin * 60_000;
