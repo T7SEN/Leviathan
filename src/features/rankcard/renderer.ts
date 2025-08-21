@@ -275,7 +275,7 @@ export async function renderRankCard(inp: Inputs): Promise<Buffer> {
   }
 
   // season emblem/label under guild icon
-  if (inp.seasonLabel || inp.seasonIconUrl) {
+  if (inp.seasonLabel) {
     const baseX = W - 24;
     let curX = baseX;
     const y = 24 + 96 + 12;
@@ -285,7 +285,6 @@ export async function renderRankCard(inp: Inputs): Promise<Buffer> {
     const pad = 12;
     const H2 = 32;
     let W2 = tw + pad * 2;
-    if (inp.seasonIconUrl) W2 += H2 + 8;
     const x = baseX - W2;
     const r3 = H2 / 2;
     ctx.fillStyle = seasonFill;
@@ -298,11 +297,6 @@ export async function renderRankCard(inp: Inputs): Promise<Buffer> {
     ctx.closePath();
     ctx.fill();
     curX = x + pad;
-    if (inp.seasonIconUrl) {
-      const em = await loadAnyImage(inp.seasonIconUrl);
-      if (em) ctx.drawImage(em as any, curX, y, H2, H2);
-      curX += H2 + 8;
-    }
     ctx.fillStyle = seasonText;
     if (txt) ctx.fillText(txt, curX, y + 24);
   }
