@@ -9,6 +9,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { actionLogger } from "../lib/action-logger.js";
 import { metrics } from "../obs/metrics.js";
+import { handleClaimButton } from "../features/drops/claim.js";
 
 type CommandModule = {
   data: { name: string; toJSON?: () => unknown };
@@ -66,6 +67,13 @@ export async function registerInteractionHandler(client: Client) {
   const commands = await loadCommands();
 
   client.on(Events.InteractionCreate, async (interaction) => {
+    if (
+      interaction.isButton() &&
+      interaction.customId.startsWith("drop:claim:")
+    ) {
+      await handleClaimButton(interaction);
+      return;
+    }
     if (!interaction.isChatInputCommand()) return;
     metrics.inc(`cmd.${interaction.commandName}.calls`);
     const cmd = commands.get(interaction.commandName);
@@ -84,7 +92,6 @@ export async function registerInteractionHandler(client: Client) {
       }
       return;
     }
-
     try {
       await cmd.execute(interaction);
       await actionLogger(interaction.client).logCommand(interaction, "ok");
