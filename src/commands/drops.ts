@@ -27,7 +27,9 @@ type Key =
   | "pityEnabled"
   | "pityMinMessages"
   | "pityWindowMs"
-  | "pityTier";
+  | "pityTier"
+  | "sweeperIntervalMs"
+  | "dropRetentionMs";
 
 const TIER_CHOICES: readonly TierOpt[] = [
   "auto",
@@ -104,7 +106,9 @@ export const data = new SlashCommandBuilder()
                 { name: "pityEnabled", value: "pityEnabled" },
                 { name: "pityMinMessages", value: "pityMinMessages" },
                 { name: "pityWindowMs", value: "pityWindowMs" },
-                { name: "pityTier", value: "pityTier" }
+                { name: "pityTier", value: "pityTier" },
+                { name: "sweeperIntervalMs", value: "sweeperIntervalMs" },
+                { name: "dropRetentionMs", value: "dropRetentionMs" }
               )
           )
           .addStringOption((o) =>
@@ -168,6 +172,8 @@ export async function execute(i: ChatInputCommandInteraction) {
       `pityMinMessages: ${cfg.pityMinMessages}`,
       `pityWindowMs: ${cfg.pityWindowMs}`,
       `pityTier: ${cfg.pityTier}`,
+      `sweeperIntervalMs: ${cfg.sweeperIntervalMs}`,
+      `dropRetentionMs: ${cfg.dropRetentionMs}`,
     ].join("\n");
     await ep(i, "Drops • Config", lines);
     return;
@@ -253,7 +259,9 @@ export async function execute(i: ChatInputCommandInteraction) {
       key === "decayEveryMs" ||
       key === "perUserCooldownMs" ||
       key === "pityMinMessages" ||
-      key === "pityWindowMs"
+      key === "pityWindowMs" ||
+      key === "sweeperIntervalMs" ||
+      key === "dropRetentionMs"
     ) {
       const v = Number(raw);
       if (!Number.isFinite(v) || v < 0) {

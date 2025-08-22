@@ -15,6 +15,8 @@ export type DropsConfig = {
   pityMinMessages: number; // NEW
   pityWindowMs: number; // NEW (24h)
   pityTier: "common" | "uncommon" | "rare" | "epic" | "legendary"; // NEW
+  sweeperIntervalMs: number; // how often to scan
+  dropRetentionMs: number; // keep claimed/expired rows this long
 };
 
 const defaults: DropsConfig = {
@@ -30,7 +32,9 @@ const defaults: DropsConfig = {
   pityEnabled: true,
   pityMinMessages: 40,
   pityWindowMs: 24 * 60 * 60_000,
-  pityTier: "common",
+  pityTier: "uncommon",
+  sweeperIntervalMs: 60_000,
+  dropRetentionMs: 7 * 24 * 60 * 60_000,
 };
 
 const db = new Database(resolvedDbPath(), { fileMustExist: false });
