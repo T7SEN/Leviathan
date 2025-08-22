@@ -1,3 +1,7 @@
+import {
+  checkActiveTrio,
+  checkMarathonMixMonthly,
+} from "../features/challenges/weekly.js";
 import { logXpEvent } from "../features/leveling/xp-journal.js";
 import {
   Client,
@@ -138,6 +142,13 @@ export function registerMessageHandler(client: Client) {
         levelAfter: res.profile.level,
         qty: 1,
       });
+      await checkActiveTrio(m.client, m.guildId!, m.author.id, Date.now());
+      await checkMarathonMixMonthly(
+        m.client,
+        m.guildId!,
+        m.author.id,
+        Date.now()
+      );
     } else {
       metrics.inc("xp.award.msg.zero");
     }

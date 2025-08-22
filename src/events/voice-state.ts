@@ -1,3 +1,5 @@
+import { checkMarathonMixMonthly } from "../features/challenges/weekly.js";
+import { updateVoiceSprint } from "../features/challenges/voice-sprint.js";
 import { logXpEvent } from "../features/leveling/xp-journal.js";
 import {
   Client,
@@ -112,6 +114,30 @@ async function awardDue(
       levelAfter: res.profile.level,
       qty: elapsedMin,
     });
+    // challenge checks (no oldState/newState here)
+    const client = g.client;
+    let ch: VoiceBasedChannel | null = null;
+    try {
+      const fetched = await g.channels.fetch(sess.channelId);
+      if (fetched && "members" in fetched) {
+        ch = fetched as unknown as VoiceBasedChannel;
+      }
+    } catch {}
+
+    const ok =
+      !!ch &&
+      g.afkChannelId !== ch.id &&
+      Array.from(ch.members.values()).filter((m) => !m.user.bot).length >= 3;
+
+    await updateVoiceSprint(
+      client,
+      sess.guildId,
+      sess.userId,
+      ok,
+      elapsedMin,
+      nowMs
+    );
+    await checkMarathonMixMonthly(client, sess.guildId, sess.userId, nowMs);
   } else {
     metrics.inc("xp.award.voice.zero");
   }
