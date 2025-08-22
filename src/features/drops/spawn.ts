@@ -6,7 +6,7 @@ import {
   type TextBasedChannel,
 } from "discord.js";
 import { nanoid } from "nanoid";
-import { createDrop, attachMessage } from "./store.js";
+import { createDrop, attachMessage, expireDrop } from "./store.js";
 import { weightedPick } from "./util.js";
 import { TIER_XP, TIER_WEIGHTS, type Tier } from "./tiers.js";
 import { auditableSeed } from "../../lib/auditrng.js";
@@ -17,6 +17,8 @@ export type SpawnOpts = {
   ttlMs?: number;
   decayEveryMs?: number;
   decayPct?: number;
+  forceTier?: Tier | "auto";
+  targetUserId?: string | null;
 };
 
 export async function spawnDrop(
@@ -25,8 +27,15 @@ export async function spawnDrop(
   opts: SpawnOpts = {}
 ) {
   const now = Date.now();
-  const ttl = opts.ttlMs ?? 30_000;
-  const tier = pickTier();
+  const decayMs = opts.decayEveryMs ?? 3_000;
+  const decayPct = opts.decayPct ?? 0.05;
+  const stepsToZero = Math.ceil(1 / decayPct); // e.g. 20 steps for 5%
+  const ttl = opts.ttlMs ?? stepsToZero * decayMs; // default reaches 0%
+  const forced =
+    opts.forceTier && opts.forceTier !== "auto"
+      ? (opts.forceTier as Tier)
+      : null;
+  const tier: Tier = forced ?? pickTier();
   const baseXp = TIER_XP[tier];
   const dropId = nanoid(10);
   const channelId = (ch as any).id as string;
@@ -41,16 +50,17 @@ export async function spawnDrop(
     baseXp,
     createdMs: now,
     expiresMs: now + ttl,
+    targetUserId: opts.targetUserId ?? null,
   });
 
-  const decayMs = opts.decayEveryMs ?? 3_000;
-  const decayPct = opts.decayPct ?? 0.05;
-
+  const reserved = opts.targetUserId
+    ? `\nreserved for <@${opts.targetUserId}>`
+    : "";
   const embed = new EmbedBuilder()
     .setTitle("🎁 XP Capsule")
     .setDescription(
       `tier: **${tier}** • base: **${baseXp} XP**\n` +
-        `decays every ${Math.floor(decayMs / 1000)}s`
+        `decays every ${Math.floor(decayMs / 1000)}s${reserved}`
     )
     .setColor(0x5865f2);
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -70,28 +80,33 @@ export async function spawnDrop(
   metrics.inc(`drops.spawn.${tier}`);
 
   const started = Date.now();
-  // best-effort decay label
   const t = setInterval(async () => {
     const age = Date.now() - started;
-    if (age >= ttl) {
+    const remain = Math.max(0, ttl - age);
+    const fracLeft = remain / ttl;
+    const pctLeft = Math.max(0, Math.round(fracLeft * 100));
+
+    if (remain <= 0) {
       clearInterval(t);
       try {
-        /* @ts-expect-error */
-        await msg.edit({ components: [] });
+        expireDrop(guildId, dropId);
+      } catch {}
+      try {
+        // @ts-expect-error message delete available at runtime
+        await msg.delete();
       } catch {}
       return;
     }
-    const ticks = Math.floor(age / decayMs);
-    const pctLeft = Math.max(0, 1 - ticks * decayPct);
+
     try {
-      /* @ts-expect-error */
+      // @ts-expect-error edit exists on Message
       await msg.edit({
         embeds: [
           new EmbedBuilder()
             .setTitle("🎁 XP Capsule")
             .setDescription(
               `tier: **${tier}** • base: **${baseXp} XP**\n` +
-                `value left: ${(pctLeft * 100).toFixed(0)}%`
+                `value left: ${pctLeft}%`
             )
             .setColor(0x5865f2),
         ],

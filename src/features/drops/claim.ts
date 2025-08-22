@@ -1,5 +1,13 @@
+// src/features/drops/claim.ts
 import { type ButtonInteraction } from "discord.js";
-import { fetchDrop, tryClaimDrop, expireDrop } from "./store.js";
+import {
+  fetchDrop,
+  tryClaimDrop,
+  expireDrop,
+  getUserState,
+  noteClaim,
+} from "./store.js";
+import { getDropsConfig } from "./config.js";
 import { engine } from "../leveling/service.js";
 import { getMultiplierForRoles } from "../leveling/role-multipliers.js";
 import { markLeaderboardDirty } from "../leaderboard/rollup.js";
@@ -16,8 +24,7 @@ export async function handleClaimButton(i: ButtonInteraction) {
   )
     return;
 
-  const parts = i.customId.split(":");
-  const dropId = parts[2] ?? "";
+  const dropId = i.customId.split(":")[2] ?? "";
   if (!dropId) {
     await i.reply({ content: "Bad drop id.", ephemeral: true });
     return;
@@ -36,6 +43,28 @@ export async function handleClaimButton(i: ButtonInteraction) {
     return;
   }
 
+  // reserved-for-user check
+  if (row.target_user_id && String(row.target_user_id) !== i.user.id) {
+    await i.reply({
+      content: "This capsule is reserved for someone else.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  // per-user cooldown check
+  const cfg = getDropsConfig(i.guildId);
+  const us = getUserState(i.guildId, i.user.id);
+  const since = now - (us.lastClaimMs ?? 0);
+  if ((us.lastClaimMs ?? 0) > 0 && since < cfg.perUserCooldownMs) {
+    const secs = Math.ceil((cfg.perUserCooldownMs - since) / 1000);
+    await i.reply({
+      content: `On cooldown. Try again in ${secs}s.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
   // atomic claim
   const ok = tryClaimDrop({
     guildId: i.guildId!,
@@ -51,25 +80,29 @@ export async function handleClaimButton(i: ButtonInteraction) {
     return;
   }
 
-  // decay
-  const ttl = Number(row.expires_ms) - Number(row.created_ms);
-  const age = now - Number(row.created_ms);
-  const ticks = Math.max(0, Math.floor(age / 3000));
-  const left = Math.max(0, 1 - ticks * 0.05);
+  // payout using time-ratio + role multiplier, then award
+  const created = Number(row.created_ms);
+  const expires = Number(row.expires_ms);
+  const ttl = Math.max(1, expires - created);
+  const remain = Math.max(0, expires - now);
+  const left = Math.min(1, remain / ttl);
 
-  let amount = Math.max(1, Math.floor(Number(row.base_xp) * left));
+  let base = Math.floor(Number(row.base_xp) * left);
+  if (base < 1) base = 1;
 
-  // role multiplier
+  let mult = 1;
   try {
     const member = await i.guild.members.fetch(i.user.id);
-    const mult = getMultiplierForRoles(
+    mult = getMultiplierForRoles(
       i.guildId!,
       Array.from(member.roles.cache.keys())
     );
-    amount = Math.max(1, Math.floor(amount * mult));
   } catch {}
 
-  const res = await engine.awardRawXp(i.guildId!, i.user.id, amount, now);
+  let finalAmt = Math.floor(base * mult);
+  if (finalAmt < 1) finalAmt = 1;
+
+  const res = await engine.awardRawXp(i.guildId!, i.user.id, finalAmt, now);
   if (res.awarded > 0) {
     markLeaderboardDirty(i.guildId!);
     logXpEvent({
@@ -84,17 +117,29 @@ export async function handleClaimButton(i: ButtonInteraction) {
     });
   }
 
+  // note successful claim for cooldown tracking
+  noteClaim(i.guildId!, i.user.id, now);
+
   metrics.inc("drops.claim");
-  metrics.observe("drops.claim.xp", amount);
+  metrics.observe("drops.claim.xp", finalAmt);
 
   await i.reply({
-    content: `You claimed **${amount} XP** from a ${String(row.tier)} capsule.`,
+    content: `You claimed **${finalAmt} XP** from a ${String(
+      row.tier
+    )} capsule.`,
     ephemeral: true,
   });
 
-  // disable buttons
-  try {
-    const msg = await i.channel.messages.fetch(String(row.message_id ?? ""));
-    await msg.edit({ components: [] });
-  } catch {}
+  // delete the original capsule message in 5s
+  setTimeout(async () => {
+    try {
+      if ("delete" in i.message) {
+        // component interactions carry the source message
+        await (i.message as any).delete();
+      } else if (row.message_id && i.channel) {
+        const msg = await i.channel.messages.fetch(String(row.message_id));
+        await msg.delete();
+      }
+    } catch {}
+  }, 5000).unref?.();
 }

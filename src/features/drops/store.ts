@@ -15,6 +15,7 @@ db.exec(`
 		base_xp      integer not null,
 		created_ms   integer not null,
 		expires_ms   integer not null,
+		target_user_id text,
 		state        text not null default 'open', -- open|claimed|expired
 		claimed_user_id text,
 		claimed_ms   integer,
@@ -22,6 +23,15 @@ db.exec(`
 	);
 	create index if not exists idx_drops_state
 		on drops (guild_id, state, expires_ms);
+	
+	create table if not exists drops_user_state (
+		guild_id text not null,
+		user_id  text not null,
+		last_claim_ms integer not null default 0,
+		last_pity_ms  integer not null default 0,
+		pity_progress integer not null default 0,
+		primary key (guild_id, user_id)
+	);
 `);
 
 const ins = db.prepare(`
@@ -56,15 +66,32 @@ const expireNow = db.prepare(`
 	   and state = 'open'
 `);
 
+export type DropRow = {
+  guild_id: string;
+  drop_id: string;
+  channel_id: string;
+  message_id?: string | null;
+  seed: string;
+  tier: string;
+  base_xp: number;
+  created_ms: number;
+  expires_ms: number;
+  target_user_id?: string | null;
+  state: "open" | "claimed" | "expired";
+  claimed_user_id?: string | null;
+  claimed_ms?: number | null;
+};
+
 export function createDrop(p: {
   guildId: string;
   dropId: string;
   channelId: string;
   seed: string;
-  tier: Tier;
+  tier: string;
   baseXp: number;
   createdMs: number;
   expiresMs: number;
+  targetUserId?: string | null; // NEW
 }) {
   ins.run(
     p.guildId,
@@ -76,6 +103,13 @@ export function createDrop(p: {
     p.createdMs,
     p.expiresMs
   );
+  if (p.targetUserId) {
+    db.prepare(
+      `
+			update drops set target_user_id = ? where guild_id = ? and drop_id = ?
+		`
+    ).run(p.targetUserId, p.guildId, p.dropId);
+  }
 }
 
 export function attachMessage(
@@ -86,8 +120,25 @@ export function attachMessage(
   setMsg.run(messageId, guildId, dropId);
 }
 
-export function fetchDrop(guildId: string, dropId: string): any | null {
-  return getRow.get(guildId, dropId) ?? null;
+// replace fetchDrop with a typed version
+export function fetchDrop(guildId: string, dropId: string): DropRow | null {
+  const r = getRow.get(guildId, dropId) as any;
+  if (!r) return null;
+  return {
+    guild_id: String(r.guild_id),
+    drop_id: String(r.drop_id),
+    channel_id: String(r.channel_id),
+    message_id: r.message_id ?? null,
+    seed: String(r.seed),
+    tier: String(r.tier),
+    base_xp: Number(r.base_xp ?? 0),
+    created_ms: Number(r.created_ms ?? 0),
+    expires_ms: Number(r.expires_ms ?? 0),
+    target_user_id: r.target_user_id ?? null,
+    state: (r.state ?? "open") as "open" | "claimed" | "expired",
+    claimed_user_id: r.claimed_user_id ?? null,
+    claimed_ms: r.claimed_ms ?? null,
+  };
 }
 
 export function tryClaimDrop(p: {
@@ -95,11 +146,60 @@ export function tryClaimDrop(p: {
   dropId: string;
   userId: string;
   nowMs: number;
-}): boolean {
+}) {
   const res = claim.run(p.userId, p.nowMs, p.guildId, p.dropId, p.nowMs);
   return Number(res.changes) === 1;
 }
 
 export function expireDrop(guildId: string, dropId: string) {
   expireNow.run(guildId, dropId);
+}
+
+export function getUserState(guildId: string, userId: string) {
+  const r = db
+    .prepare(
+      `
+		select last_claim_ms as lastClaimMs, last_pity_ms as lastPityMs, pity_progress as pityProgress
+		  from drops_user_state where guild_id = ? and user_id = ?
+	`
+    )
+    .get(guildId, userId) as any;
+  return {
+    lastClaimMs: Number(r?.lastClaimMs ?? 0),
+    lastPityMs: Number(r?.lastPityMs ?? 0),
+    pityProgress: Number(r?.pityProgress ?? 0),
+  };
+}
+
+export function noteClaim(guildId: string, userId: string, nowMs: number) {
+  db.prepare(
+    `
+		insert into drops_user_state (guild_id, user_id, last_claim_ms, last_pity_ms, pity_progress)
+		values (?, ?, ?, 0, 0)
+		on conflict(guild_id, user_id)
+		do update set last_claim_ms = excluded.last_claim_ms, pity_progress = 0
+	`
+  ).run(guildId, userId, nowMs);
+}
+
+export function incPityProgress(guildId: string, userId: string, delta = 1) {
+  db.prepare(
+    `
+		insert into drops_user_state (guild_id, user_id, pity_progress)
+		values (?, ?, ?)
+		on conflict(guild_id, user_id)
+		do update set pity_progress = drops_user_state.pity_progress + excluded.pity_progress
+	`
+  ).run(guildId, userId, delta);
+}
+
+export function notePitySpawn(guildId: string, userId: string, nowMs: number) {
+  db.prepare(
+    `
+		insert into drops_user_state (guild_id, user_id, last_pity_ms)
+		values (?, ?, ?)
+		on conflict(guild_id, user_id)
+		do update set last_pity_ms = excluded.last_pity_ms, pity_progress = 0
+	`
+  ).run(guildId, userId, nowMs);
 }

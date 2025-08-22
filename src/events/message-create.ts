@@ -1,3 +1,4 @@
+import { onEligibleMessage } from "../features/drops/scheduler.js";
 import {
   checkActiveTrio,
   checkMarathonMixMonthly,
@@ -75,6 +76,11 @@ export function registerMessageHandler(client: Client) {
       metrics.inc(`msg.reject.${gate.reason ?? "blocked"}`);
       return;
     }
+
+    // feed auto-spawn scheduler on eligible messages
+    onEligibleMessage(m.client, m.guildId!, m.channelId, m.author.id).catch(
+      () => {}
+    );
 
     // maintenance: enqueue and exit
     if (getFlag(MAINTENANCE_MODE, false)) {
