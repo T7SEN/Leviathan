@@ -141,3 +141,4 @@ vite.config.ts.timestamp-*
 db/leviathan.sqlite-shm
 db/leviathan.sqlite-wal
 .vscode
+db/leviathan.sqlite
