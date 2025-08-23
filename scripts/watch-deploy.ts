@@ -1,90 +1,82 @@
 import chokidar from "chokidar";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
-function runDeploy(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const script = path.resolve("scripts/deploy-commands.ts");
-    const child = spawn(process.execPath, ["--import", "tsx", script], {
-      stdio: "inherit",
-      env: process.env,
-    });
-    child.on("error", (err) => reject(err));
-    child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`deploy exit ${code}`));
-    });
-  });
+const here = path.dirname(fileURLToPath(import.meta.url));
+const deployTs = path.resolve(here, "./deploy-commands.ts");
+
+function tsxLoaderArgs(): string[] {
+  const major = Number(process.versions.node.split(".")[0]);
+  return major >= 20 ? ["--import", "tsx"] : ["--loader", "tsx"];
 }
 
-let queued = false;
-let running = false;
-let ready = false;
+async function resolveWatchGlobs(): Promise<string[]> {
+  const dist = path.resolve(here, "../dist/src/commands");
+  const src = path.resolve(here, "../src/commands");
+  const globs: string[] = [];
+  try {
+    if ((await fs.stat(dist)).isDirectory())
+      globs.push(`${dist}/**/*.js`, `${dist}/**/*.json`);
+  } catch {}
+  try {
+    if ((await fs.stat(src)).isDirectory())
+      globs.push(`${src}/**/*.ts`, `${src}/**/*.json`);
+  } catch {}
+  if (globs.length === 0) globs.push(`${src}/**/*.ts`, `${src}/**/*.json`);
+  return globs;
+}
 
-async function trigger() {
+let running = false,
+  queued = false;
+function runDeploy() {
   if (running) {
     queued = true;
     return;
   }
   running = true;
-  try {
-    await runDeploy();
-  } catch (err) {
-    console.error("[watch] deploy failed:", err);
-  } finally {
+  const child = spawn(process.execPath, [...tsxLoaderArgs(), deployTs], {
+    stdio: "inherit",
+    env: process.env,
+  });
+  child.on("exit", (code) => {
     running = false;
     if (queued) {
       queued = false;
-      void trigger();
+      runDeploy();
     }
-  }
-}
-
-function debounce<T extends (...args: any[]) => void>(fn: T, ms: number) {
-  let t: NodeJS.Timeout | null = null;
-  return (...args: Parameters<T>) => {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-
-async function main() {
-  console.log("[watch] watching dir: src/commands (recursive)");
-  const watcher = chokidar.watch("src/commands", {
-    persistent: true,
-    ignoreInitial: false, // gate with ready
-    depth: 99,
-    ignored: ["**/*.d.ts", "**/*.map", "**/node_modules/**"],
-    awaitWriteFinish: { stabilityThreshold: 700, pollInterval: 120 },
+    if (code !== 0) console.error(`[deploy] exit ${code}`);
   });
-  const debounced = debounce(trigger, 700);
-  const onFile = (evt: string) => (file: string) => {
-    if (!ready) return;
-    const lower = file.toLowerCase();
-    if (!(lower.endsWith(".ts") || lower.endsWith(".js"))) return;
-    console.log(`[watch] ${evt}: ${file}`);
-    debounced();
-  };
-  const onDir = (evt: string) => (dir: string) => {
-    if (!ready) return;
-    console.log(`[watch] ${evt}: ${dir}`);
-    debounced();
-  };
-  watcher
-    .on("add", onFile("add"))
-    .on("change", onFile("change"))
-    .on("unlink", onFile("unlink"))
-    .on("addDir", onDir("addDir"))
-    .on("unlinkDir", onDir("unlinkDir"))
-    .on("error", (err) => console.error("[watch] error:", err))
-    .on("ready", async () => {
-      ready = true;
-      console.log("[watch] ready → initial deploy");
-      await trigger();
-    });
+  child.on("error", (e) => {
+    running = false;
+    console.error("[deploy] spawn error:", e);
+  });
 }
 
-main().catch((err) => {
-  console.error(err);
+(async () => {
+  const globs = await resolveWatchGlobs();
+  console.log("[watch] globs:", globs.join(", "));
+
+  const watcher = chokidar.watch(globs, {
+    ignoreInitial: true, // prevent duplicate deploy on startup
+    awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 50 },
+  });
+
+  let bootDeployed = false;
+  watcher
+    .on("ready", () => {
+      if (!bootDeployed) {
+        bootDeployed = true;
+        console.log("[watch] ready → initial deploy");
+        runDeploy();
+      }
+    })
+    .on("add", runDeploy)
+    .on("change", runDeploy)
+    .on("unlink", runDeploy)
+    .on("error", (e) => console.error("[watch] error:", e));
+})().catch((e) => {
+  console.error(e);
   process.exit(1);
 });
