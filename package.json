@@ -12,7 +12,7 @@
     "deploy:commands": "tsx scripts/deploy-commands.ts",
     "dev:bot": "tsx watch src/index.ts",
     "dev:deploy": "tsx scripts/watch-deploy.ts",
-    "dev": "concurrently -k -n bot,deploy \"npm:dev:bot\" \"npm:dev:deploy\"",
+    "dev": "concurrently -k -n bot,deploy npm:dev:bot npm:dev:deploy",
     "lint": "eslint .",
     "typecheck": "npx tsc --noEmit",
     "test": "vitest run",
@@ -33,7 +33,7 @@
     "concurrently": "^9.2.0",
     "eslint": "^9.10.0",
     "fast-check": "^4.2.0",
-    "tsx": "^4.7.0",
+    "tsx": "^4.20.4",
     "typescript": "^5.5.0",
     "vitest": "^3.2.4"
   }
