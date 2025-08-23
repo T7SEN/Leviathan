@@ -383,3 +383,22 @@ export function noteBossSpawn(guildId: string, nowMs: number) {
 	`
   ).run(guildId, nowMs);
 }
+
+export function listClaimsSince(
+  guildId: string,
+  sinceMs: number
+): Array<{ userId: string; dropId: string; claimedMs: number }> {
+  const rows = db
+    .prepare(
+      `select user_id, drop_id, claimed_ms
+		   from drops_claim_log
+		  where guild_id = ? and claimed_ms >= ?
+		  order by claimed_ms desc`
+    )
+    .all(guildId, sinceMs) as any[];
+  return rows.map((r) => ({
+    userId: String(r.user_id),
+    dropId: String(r.drop_id),
+    claimedMs: Number(r.claimed_ms),
+  }));
+}

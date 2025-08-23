@@ -6,6 +6,7 @@ import {
   type ChatInputCommandInteraction,
   MessageFlags,
   PermissionFlagsBits,
+  AttachmentBuilder,
 } from "discord.js";
 import { makeEmbed } from "../lib/embeds.js";
 import { spawnDrop } from "../features/drops/spawn.js";
@@ -18,6 +19,7 @@ import {
   getDropStats,
   topClaimers,
   getBossState,
+  listClaimsSince,
 } from "../features/drops/store.js";
 
 type TierOpt = "auto" | "common" | "uncommon" | "rare" | "epic" | "legendary";
@@ -85,6 +87,18 @@ data.addSubcommand((sc) =>
 );
 data.addSubcommand((sc) =>
   sc.setName("stats").setDescription("Guild drop stats (24h)")
+);
+data.addSubcommand((sc) =>
+  sc
+    .setName("export")
+    .setDescription("Export claims as CSV")
+    .addIntegerOption((o) =>
+      o
+        .setName("days")
+        .setDescription("How many days back (default 7)")
+        .setMinValue(1)
+        .setMaxValue(90)
+    )
 );
 data.addSubcommandGroup((g) =>
   g
@@ -398,6 +412,30 @@ export async function execute(i: ChatInputCommandInteraction) {
         `minMessagesBeforeSpawn: ${cfg.minMessagesBeforeSpawn}\n` +
         `channelCooldownMs: ${cfg.channelCooldownMs}`
     );
+    return;
+  }
+
+  if (!group && sub === "export") {
+    const days = i.options.getInteger("days") ?? 7;
+    const since = Date.now() - days * 24 * 60 * 60_000;
+    const rows = listClaimsSince(i.guildId, since);
+
+    // CSV header
+    let csv = "userId,dropId,claimedAt\n";
+    for (const r of rows) {
+      const ts = new Date(r.claimedMs).toISOString();
+      csv += `${r.userId},${r.dropId},${ts}\n`;
+    }
+    const buf = Buffer.from(csv, "utf8");
+    const file = new AttachmentBuilder(buf, {
+      name: `drops-claims-${days}d.csv`,
+    });
+
+    await i.reply({
+      embeds: [makeEmbed("Drops • Export", `Rows: ${rows.length}`)],
+      files: [file],
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 
