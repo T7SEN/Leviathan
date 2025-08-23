@@ -1,15 +1,20 @@
+// src/features/drops/scheduler.ts
+
 import type { Client, TextBasedChannel } from "discord.js";
 import { spawnDrop } from "./spawn.js";
 import { metrics } from "../../obs/metrics.js";
 import { getDropsConfig } from "./config.js";
-import { incPityProgress, getUserState, notePitySpawn } from "./store.js";
+import {
+  incPityProgress,
+  getUserState,
+  notePitySpawn,
+  countSpawnsSince,
+  lastChannelSpawnMs,
+} from "./store.js";
 
 type ChanMap<T> = Map<string, T>; // channelId → T
 
 const recentMsgs = new Map<string, ChanMap<number>>(); // counter
-const lastSpawn = new Map<string, ChanMap<number>>(); // ms
-const hourSpawns = new Map<string, number[]>(); // ms[]
-const daySpawns = new Map<string, number[]>(); // ms[]
 
 function getChanMap<T>(root: Map<string, ChanMap<T>>, g: string): ChanMap<T> {
   let m = root.get(g);
@@ -18,16 +23,6 @@ function getChanMap<T>(root: Map<string, ChanMap<T>>, g: string): ChanMap<T> {
     root.set(g, m);
   }
   return m;
-}
-
-function within(arr: number[], windowMs: number, now: number): number[] {
-  const cut = now - windowMs;
-  let idx = 0;
-  for (; idx < arr.length; idx += 1) {
-    const v = arr[idx]!;
-    if (v >= cut) break;
-  }
-  return idx > 0 ? arr.slice(idx) : arr;
 }
 
 /** Call once per eligible message */
@@ -42,21 +37,17 @@ export async function onEligibleMessage(
 
   // channel allowlist
   if (cfg.allowChannels && !cfg.allowChannels.includes(channelId)) return;
+  if (cfg.channelDenylist && cfg.channelDenylist.includes(channelId)) return;
 
-  // global caps
-  const h = hourSpawns.get(guildId) ?? [];
-  const d = daySpawns.get(guildId) ?? [];
-  const h2 = within(h, 60 * 60_000, now);
-  const d2 = within(d, 24 * 60 * 60_000, now);
-  hourSpawns.set(guildId, h2);
-  daySpawns.set(guildId, d2);
-  if (h2.length >= cfg.globalPerHour) return;
-  if (d2.length >= cfg.globalPerDay) return;
+  // global caps (DB, restart-proof)
+  const hourCount = countSpawnsSince(guildId, now - 60 * 60_000);
+  if (hourCount >= cfg.globalPerHour) return;
+  const dayCount = countSpawnsSince(guildId, now - 24 * 60 * 60_000);
+  if (dayCount >= cfg.globalPerDay) return;
 
   // per-channel cooldown
-  const ls = getChanMap(lastSpawn, guildId);
-  const last = ls.get(channelId) ?? 0;
-  if (now - last < cfg.channelCooldownMs) return;
+  const last = lastChannelSpawnMs(guildId, channelId);
+  if (last && now - last < cfg.channelCooldownMs) return;
 
   // increment activity
   const rm = getChanMap(recentMsgs, guildId);
@@ -85,12 +76,7 @@ export async function onEligibleMessage(
 
       // record
       metrics.inc("drops.autospawn");
-      ls.set(channelId, now);
       rm.set(channelId, 0);
-      h2.push(now);
-      d2.push(now);
-      hourSpawns.set(guildId, h2);
-      daySpawns.set(guildId, d2);
     } catch {
       // ignore send errors
     }

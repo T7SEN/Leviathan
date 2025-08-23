@@ -17,14 +17,19 @@ export type DropsConfig = {
   pityTier: "common" | "uncommon" | "rare" | "epic" | "legendary"; // NEW
   sweeperIntervalMs: number; // how often to scan
   dropRetentionMs: number; // keep claimed/expired rows this long
+  minAccountAgeMs: number;
+  minGuildJoinAgeMs: number;
+  channelDenylist: string[] | null;
+  maxClaimsPerMinutePerUser: number;
+  maxClaimsPerHourPerUser: number;
 };
 
 const defaults: DropsConfig = {
   allowChannels: null,
-  minMessagesBeforeSpawn: 20,
+  minMessagesBeforeSpawn: 10,
   channelCooldownMs: 15 * 60_000,
-  globalPerHour: 3,
-  globalPerDay: 10,
+  globalPerHour: 2,
+  globalPerDay: 5,
   decayEveryMs: 3_000,
   decayPct: 0.05,
   applyRoleMultiplier: true,
@@ -35,6 +40,11 @@ const defaults: DropsConfig = {
   pityTier: "uncommon",
   sweeperIntervalMs: 60_000,
   dropRetentionMs: 7 * 24 * 60 * 60_000,
+  minAccountAgeMs: 7 * 24 * 60 * 60_000,
+  minGuildJoinAgeMs: 24 * 60 * 60_000,
+  channelDenylist: null,
+  maxClaimsPerMinutePerUser: 2,
+  maxClaimsPerHourPerUser: 10,
 };
 
 const db = new Database(resolvedDbPath(), { fileMustExist: false });

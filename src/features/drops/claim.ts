@@ -6,6 +6,8 @@ import {
   expireDrop,
   getUserState,
   noteClaim,
+  countClaimsSince,
+  recordClaim,
 } from "./store.js";
 import { getDropsConfig } from "./config.js";
 import { engine } from "../leveling/service.js";
@@ -65,6 +67,57 @@ export async function handleClaimButton(i: ButtonInteraction) {
     return;
   }
 
+  // channel denylist
+  if (
+    cfg.channelDenylist &&
+    cfg.channelDenylist.includes(String(row.channel_id))
+  ) {
+    await i.reply({
+      content: "Claims disabled in this channel.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  // account age
+  const createdAt =
+    i.user.createdAt?.getTime?.() ?? Date.parse(i.user.createdAt as any);
+  if (Date.now() - createdAt < cfg.minAccountAgeMs) {
+    await i.reply({ content: "Account too new to claim.", ephemeral: true });
+    return;
+  }
+
+  // guild join age
+  try {
+    const member = await i.guild.members.fetch(i.user.id);
+    const joined = member.joinedTimestamp ?? 0;
+    if (joined > 0 && Date.now() - joined < cfg.minGuildJoinAgeMs) {
+      await i.reply({ content: "Join age too new to claim.", ephemeral: true });
+      return;
+    }
+  } catch {
+    /* ignore fetch errors */
+  }
+
+  const minStart = now - 60_000;
+  const hrStart = now - 60 * 60_000;
+  const mCount = countClaimsSince(i.guildId!, i.user.id, minStart);
+  if (mCount >= cfg.maxClaimsPerMinutePerUser) {
+    await i.reply({
+      content: "Rate limit: too many claims in the last minute.",
+      ephemeral: true,
+    });
+    return;
+  }
+  const hCount = countClaimsSince(i.guildId!, i.user.id, hrStart);
+  if (hCount >= cfg.maxClaimsPerHourPerUser) {
+    await i.reply({
+      content: "Rate limit: too many claims in the last hour.",
+      ephemeral: true,
+    });
+    return;
+  }
+
   // atomic claim
   const ok = tryClaimDrop({
     guildId: i.guildId!,
@@ -119,6 +172,7 @@ export async function handleClaimButton(i: ButtonInteraction) {
 
   // note successful claim for cooldown tracking
   noteClaim(i.guildId!, i.user.id, now);
+  recordClaim(i.guildId!, i.user.id, now, dropId);
 
   metrics.inc("drops.claim");
   metrics.observe("drops.claim.xp", finalAmt);

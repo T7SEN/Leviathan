@@ -12,10 +12,12 @@ import {
   setDropsConfig,
   resetDropsConfig,
 } from "../features/drops/config.js";
+import { getDropStats, topClaimers } from "../features/drops/store.js";
 
 type TierOpt = "auto" | "common" | "uncommon" | "rare" | "epic" | "legendary";
 type Key =
   | "allowChannels"
+  | "channelDenylist"
   | "minMessagesBeforeSpawn"
   | "channelCooldownMs"
   | "globalPerHour"
@@ -29,7 +31,11 @@ type Key =
   | "pityWindowMs"
   | "pityTier"
   | "sweeperIntervalMs"
-  | "dropRetentionMs";
+  | "dropRetentionMs"
+  | "minAccountAgeMs"
+  | "minGuildJoinAgeMs"
+  | "maxClaimsPerMinutePerUser"
+  | "maxClaimsPerHourPerUser";
 
 const TIER_CHOICES: readonly TierOpt[] = [
   "auto",
@@ -49,78 +55,92 @@ function ep(i: ChatInputCommandInteraction, title: string, msg: string) {
 
 export const data = new SlashCommandBuilder()
   .setName("drops")
-  .setDescription("XP drops")
-  .addSubcommand((sc) =>
-    sc
-      .setName("spawn")
-      .setDescription("Spawn a drop in this channel (admin)")
-      .addStringOption((o) =>
-        o
-          .setName("tier")
-          .setDescription("Force a tier")
-          .addChoices(
-            { name: "auto", value: "auto" },
-            { name: "common", value: "common" },
-            { name: "uncommon", value: "uncommon" },
-            { name: "rare", value: "rare" },
-            { name: "epic", value: "epic" },
-            { name: "legendary", value: "legendary" }
-          )
-      )
-  )
-  .addSubcommand((sc) =>
-    sc.setName("status").setDescription("Show drops status")
-  )
-  .addSubcommandGroup((g) =>
-    g
-      .setName("config")
-      .setDescription("View or change drops config")
-      .addSubcommand((sc) =>
-        sc.setName("show").setDescription("Show current config")
-      )
-      .addSubcommand((sc) =>
-        sc.setName("reset").setDescription("Reset to defaults")
-      )
-      .addSubcommand((sc) =>
-        sc
-          .setName("set")
-          .setDescription("Set one key")
-          .addStringOption((o) =>
-            o
-              .setName("key")
-              .setDescription("Config key")
-              .setRequired(true)
-              .addChoices(
-                { name: "allowChannels", value: "allowChannels" },
-                {
-                  name: "minMessagesBeforeSpawn",
-                  value: "minMessagesBeforeSpawn",
-                },
-                { name: "channelCooldownMs", value: "channelCooldownMs" },
-                { name: "globalPerHour", value: "globalPerHour" },
-                { name: "globalPerDay", value: "globalPerDay" },
-                { name: "decayEveryMs", value: "decayEveryMs" },
-                { name: "decayPct", value: "decayPct" },
-                { name: "applyRoleMultiplier", value: "applyRoleMultiplier" },
-                { name: "perUserCooldownMs", value: "perUserCooldownMs" },
-                { name: "pityEnabled", value: "pityEnabled" },
-                { name: "pityMinMessages", value: "pityMinMessages" },
-                { name: "pityWindowMs", value: "pityWindowMs" },
-                { name: "pityTier", value: "pityTier" },
-                { name: "sweeperIntervalMs", value: "sweeperIntervalMs" },
-                { name: "dropRetentionMs", value: "dropRetentionMs" }
-              )
-          )
-          .addStringOption((o) =>
-            o
-              .setName("value")
-              .setDescription(
-                'Value. allowChannels: "any"|"here"|"none"|ids/mentions'
-              )
-              .setRequired(true)
-          )
-      )
-  );
+  .setDescription("XP drops");
+data.addSubcommand((sc) =>
+  sc
+    .setName("spawn")
+    .setDescription("Spawn a drop in this channel (admin)")
+    .addStringOption((o) =>
+      o
+        .setName("tier")
+        .setDescription("Force a tier")
+        .addChoices(
+          { name: "auto", value: "auto" },
+          { name: "common", value: "common" },
+          { name: "uncommon", value: "uncommon" },
+          { name: "rare", value: "rare" },
+          { name: "epic", value: "epic" },
+          { name: "legendary", value: "legendary" }
+        )
+    )
+);
+data.addSubcommand((sc) =>
+  sc.setName("status").setDescription("Show drops status")
+);
+data.addSubcommand((sc) =>
+  sc.setName("stats").setDescription("Guild drop stats (24h)")
+);
+data.addSubcommandGroup((g) =>
+  g
+    .setName("config")
+    .setDescription("View or change drops config")
+    .addSubcommand((sc) =>
+      sc.setName("show").setDescription("Show current config")
+    )
+    .addSubcommand((sc) =>
+      sc.setName("reset").setDescription("Reset to defaults")
+    )
+    .addSubcommand((sc) =>
+      sc
+        .setName("set")
+        .setDescription("Set one key")
+        .addStringOption((o) =>
+          o
+            .setName("key")
+            .setDescription("Config key")
+            .setRequired(true)
+            .addChoices(
+              { name: "allowChannels", value: "allowChannels" },
+              { name: "channelDenylist", value: "channelDenylist" },
+              {
+                name: "minMessagesBeforeSpawn",
+                value: "minMessagesBeforeSpawn",
+              },
+              { name: "channelCooldownMs", value: "channelCooldownMs" },
+              { name: "globalPerHour", value: "globalPerHour" },
+              { name: "globalPerDay", value: "globalPerDay" },
+              { name: "decayEveryMs", value: "decayEveryMs" },
+              { name: "decayPct", value: "decayPct" },
+              { name: "applyRoleMultiplier", value: "applyRoleMultiplier" },
+              { name: "perUserCooldownMs", value: "perUserCooldownMs" },
+              { name: "pityEnabled", value: "pityEnabled" },
+              { name: "pityMinMessages", value: "pityMinMessages" },
+              { name: "pityWindowMs", value: "pityWindowMs" },
+              { name: "pityTier", value: "pityTier" },
+              { name: "sweeperIntervalMs", value: "sweeperIntervalMs" },
+              { name: "dropRetentionMs", value: "dropRetentionMs" },
+              { name: "minAccountAgeMs", value: "minAccountAgeMs" },
+              { name: "minGuildJoinAgeMs", value: "minGuildJoinAgeMs" },
+              {
+                name: "maxClaimsPerMinutePerUser",
+                value: "maxClaimsPerMinutePerUser",
+              },
+              {
+                name: "maxClaimsPerHourPerUser",
+                value: "maxClaimsPerHourPerUser",
+              }
+            )
+        )
+        .addStringOption((o) =>
+          o
+            .setName("value")
+            .setDescription(
+              'Value. allow/channel lists: "any"|"none"|"here"|ids/mentions'
+            )
+            .setRequired(true)
+        )
+    )
+);
 
 export async function execute(i: ChatInputCommandInteraction) {
   if (!i.guildId || !i.channel) {
@@ -145,6 +165,32 @@ export async function execute(i: ChatInputCommandInteraction) {
     return;
   }
 
+  // execute: handle 'stats'
+  if (!group && sub === "stats") {
+    const s = getDropStats(i.guildId);
+    const openLines = Object.keys(s.openByTier).length
+      ? Object.entries(s.openByTier)
+          .map(([k, v]) => `• ${k}: ${v}`)
+          .join("\n")
+      : "none";
+
+    const top = topClaimers(i.guildId, Date.now() - 24 * 60 * 60_000, 5);
+    const topLines = top.length
+      ? top.map((x) => `• <@${x.userId}>: ${x.count}`).join("\n")
+      : "none";
+
+    const body = [
+      `Open total: ${s.openTotal}`,
+      `Open by tier:\n${openLines}`,
+      `Claimed last 24h: ${s.claimed24h}`,
+      `Expired last 24h: ${s.expired24h}`,
+      `Top claimers (24h):\n${topLines}`,
+    ].join("\n");
+
+    await ep(i, "Drops • Stats", body);
+    return;
+  }
+
   // /drops status
   if (!group && sub === "status") {
     await ep(i, "Drops", "Active: auto spawns enabled.");
@@ -160,6 +206,11 @@ export async function execute(i: ChatInputCommandInteraction) {
           ? cfg.allowChannels.map((id) => `<#${id}>`).join(", ")
           : "any"
       }`,
+      `channelDenylist: ${
+        cfg.channelDenylist
+          ? cfg.channelDenylist.map((id) => `<#${id}>`).join(", ")
+          : "none"
+      }`,
       `minMessagesBeforeSpawn: ${cfg.minMessagesBeforeSpawn}`,
       `channelCooldownMs: ${cfg.channelCooldownMs}`,
       `globalPerHour: ${cfg.globalPerHour}`,
@@ -174,6 +225,10 @@ export async function execute(i: ChatInputCommandInteraction) {
       `pityTier: ${cfg.pityTier}`,
       `sweeperIntervalMs: ${cfg.sweeperIntervalMs}`,
       `dropRetentionMs: ${cfg.dropRetentionMs}`,
+      `minAccountAgeMs: ${cfg.minAccountAgeMs}`,
+      `minGuildJoinAgeMs: ${cfg.minGuildJoinAgeMs}`,
+      `maxClaimsPerMinutePerUser: ${cfg.maxClaimsPerMinutePerUser}`,
+      `maxClaimsPerHourPerUser: ${cfg.maxClaimsPerHourPerUser}`,
     ].join("\n");
     await ep(i, "Drops • Config", lines);
     return;
@@ -210,12 +265,12 @@ export async function execute(i: ChatInputCommandInteraction) {
     const raw = i.options.getString("value", true);
     const patch: Partial<ReturnType<typeof getDropsConfig>> = {};
 
-    if (key === "allowChannels") {
+    if (key === "allowChannels" || key === "channelDenylist") {
       const v = raw.trim();
-      if (/^(any|none|null)$/i.test(v)) {
-        patch.allowChannels = null;
+      if (/^(any|none|null|empty)$/i.test(v)) {
+        (patch as any)[key] = null;
       } else if (/^here$/i.test(v)) {
-        patch.allowChannels = [i.channelId];
+        (patch as any)[key] = [i.channelId];
       } else {
         const ids = v
           .split(",")
@@ -223,17 +278,13 @@ export async function execute(i: ChatInputCommandInteraction) {
           .map((s) => s.replace(/[<#>]/g, ""))
           .filter((s) => /^\d{5,}$/.test(s));
         if (ids.length === 0) {
-          await ep(
-            i,
-            "Drops • Config",
-            "No valid channel IDs. Use #mentions or ids."
-          );
+          await ep(i, "Drops • Config", "No valid channel IDs.");
           return;
         }
-        patch.allowChannels = ids;
+        (patch as any)[key] = ids;
       }
     } else if (key === "pityEnabled" || key === "applyRoleMultiplier") {
-      patch[key] = /^(1|true|on|yes)$/i.test(raw) as any;
+      (patch as any)[key] = /^(1|true|on|yes)$/i.test(raw);
     } else if (key === "pityTier") {
       if (
         !(
@@ -261,7 +312,11 @@ export async function execute(i: ChatInputCommandInteraction) {
       key === "pityMinMessages" ||
       key === "pityWindowMs" ||
       key === "sweeperIntervalMs" ||
-      key === "dropRetentionMs"
+      key === "dropRetentionMs" ||
+      key === "minAccountAgeMs" ||
+      key === "minGuildJoinAgeMs" ||
+      key === "maxClaimsPerMinutePerUser" ||
+      key === "maxClaimsPerHourPerUser"
     ) {
       const v = Number(raw);
       if (!Number.isFinite(v) || v < 0) {
@@ -282,6 +337,11 @@ export async function execute(i: ChatInputCommandInteraction) {
           ? next.allowChannels.map((id) => `<#${id}>`).join(", ")
           : "any"
       }`,
+      `channelDenylist: ${
+        next.channelDenylist
+          ? next.channelDenylist.map((id) => `<#${id}>`).join(", ")
+          : "none"
+      }`,
       `minMessagesBeforeSpawn: ${next.minMessagesBeforeSpawn}`,
       `channelCooldownMs: ${next.channelCooldownMs}`,
       `globalPerHour: ${next.globalPerHour}`,
@@ -294,6 +354,12 @@ export async function execute(i: ChatInputCommandInteraction) {
       `pityMinMessages: ${next.pityMinMessages}`,
       `pityWindowMs: ${next.pityWindowMs}`,
       `pityTier: ${next.pityTier}`,
+      `sweeperIntervalMs: ${next.sweeperIntervalMs}`,
+      `dropRetentionMs: ${next.dropRetentionMs}`,
+      `minAccountAgeMs: ${next.minAccountAgeMs}`,
+      `minGuildJoinAgeMs: ${next.minGuildJoinAgeMs}`,
+      `maxClaimsPerMinutePerUser: ${next.maxClaimsPerMinutePerUser}`,
+      `maxClaimsPerHourPerUser: ${next.maxClaimsPerHourPerUser}`,
     ].join("\n");
 
     await ep(i, "Drops • Config", lines);
