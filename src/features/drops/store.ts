@@ -42,6 +42,13 @@ db.exec(`
   );
   create index if not exists idx_drops_claim_log_gut
     on drops_claim_log (guild_id, user_id, claimed_ms);
+
+  create table if not exists drops_boss_state (
+		guild_id text primary key,
+		msg_count integer not null default 0,
+		vmin_count integer not null default 0,
+		last_spawn_ms integer not null default 0
+	)
 `);
 
 const ins = db.prepare(`
@@ -338,4 +345,41 @@ export function lastChannelSpawnMs(guildId: string, channelId: string): number {
     )
     .get(guildId, channelId) as any;
   return Number(r?.m ?? 0);
+}
+
+export function getBossState(guildId: string) {
+  const r = db
+    .prepare(
+      `select msg_count as msg, vmin_count as vmin, last_spawn_ms as last
+		   from drops_boss_state where guild_id = ?`
+    )
+    .get(guildId) as any;
+  return {
+    msg: Number(r?.msg ?? 0),
+    vmin: Number(r?.vmin ?? 0),
+    last: Number(r?.last ?? 0),
+  };
+}
+
+export function incBoss(guildId: string, kind: "msg" | "vmin", qty: number) {
+  const col = kind === "msg" ? "msg_count" : "vmin_count";
+  db.prepare(
+    `
+		insert into drops_boss_state (guild_id, ${col})
+		values (?, ?)
+		on conflict(guild_id) do update set ${col} = ${col} + excluded.${col}
+	`
+  ).run(guildId, Math.max(0, Math.floor(qty)));
+}
+
+export function noteBossSpawn(guildId: string, nowMs: number) {
+  db.prepare(
+    `
+		insert into drops_boss_state (guild_id, last_spawn_ms, msg_count, vmin_count)
+		values (?, ?, 0, 0)
+		on conflict(guild_id) do update
+		  set last_spawn_ms = excluded.last_spawn_ms,
+		      msg_count = 0, vmin_count = 0
+	`
+  ).run(guildId, nowMs);
 }

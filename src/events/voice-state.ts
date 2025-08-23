@@ -1,3 +1,7 @@
+//src/events/voice-state.ts
+
+import { incBoss } from "../features/drops/store.js";
+import { trySpawnBoss } from "../features/drops/boss.js";
 import { checkMarathonMixMonthly } from "../features/challenges/weekly.js";
 import { updateVoiceSprint } from "../features/challenges/voice-sprint.js";
 import { logXpEvent } from "../features/leveling/xp-journal.js";
@@ -60,6 +64,7 @@ async function awardDue(
 ): Promise<void> {
   if (!sess.eligible) return;
   const policy = getVoiceConfig(sess.guildId);
+
   const startBucket = Math.floor(sess.lastAwardMs / 60_000) + 1;
   const endBucket = Math.floor(nowMs / 60_000);
   const elapsedMin = Math.max(0, endBucket - startBucket + 1);
@@ -73,6 +78,8 @@ async function awardDue(
     Array.from(member.roles.cache.keys())
   );
   const perMin = Math.floor(policy.xpPerMinute * factor);
+
+  // maintenance queue path
   if (getFlag(MAINTENANCE_MODE, false)) {
     for (let b = startBucket; b <= endBucket; b += 1) {
       enqueueVoiceBucket(sess.guildId, sess.userId, b, perMin, b * 60_000);
@@ -81,6 +88,8 @@ async function awardDue(
     metrics.observe("maint.queue.voice", elapsedMin);
     return;
   }
+
+  // claim idempotent minute buckets
   const buckets: number[] = [];
   for (let b = startBucket; b <= endBucket; b += 1) buckets.push(b);
   const claimed = claimVoiceMinutes(
@@ -94,16 +103,22 @@ async function awardDue(
     sess.lastAwardMs = nowMs;
     return;
   }
+
   metrics.observe("voice.minutes", claimed);
+
   const xp = claimed * perMin;
   const stop = metrics.startTimer("engine.award.voice");
   const res = await engine.awardRawXp(sess.guildId, sess.userId, xp, nowMs);
   stop();
+
+  // periodic cleanup
   if (Date.now() % 120_000 < 50)
     pruneLedger(Date.now() - 30 * 24 * 60 * 60_000);
+
   if (res.awarded > 0) {
     metrics.inc("xp.award.voice.count");
     metrics.observe("xp.award.voice", res.awarded);
+
     logXpEvent({
       guildId: sess.guildId,
       userId: sess.userId,
@@ -114,8 +129,14 @@ async function awardDue(
       levelAfter: res.profile.level,
       qty: elapsedMin,
     });
-    // challenge checks (no oldState/newState here)
-    const client = g.client;
+
+    // update leaderboard and try boss after a real award
+    markLeaderboardDirty(sess.guildId);
+    incBoss(sess.guildId, "vmin", Math.max(1, Math.floor(elapsedMin)));
+    trySpawnBoss(g.client, sess.guildId).catch(() => {});
+
+    // challenge checks
+    const clientRef = g.client;
     let ch: VoiceBasedChannel | null = null;
     try {
       const fetched = await g.channels.fetch(sess.channelId);
@@ -130,19 +151,20 @@ async function awardDue(
       Array.from(ch.members.values()).filter((m) => !m.user.bot).length >= 3;
 
     await updateVoiceSprint(
-      client,
+      clientRef,
       sess.guildId,
       sess.userId,
       ok,
       elapsedMin,
       nowMs
     );
-    await checkMarathonMixMonthly(client, sess.guildId, sess.userId, nowMs);
+    await checkMarathonMixMonthly(clientRef, sess.guildId, sess.userId, nowMs);
   } else {
     metrics.inc("xp.award.voice.zero");
   }
+
+  // streak bonus (may add extra XP)
   if (res.awarded > 0) {
-    markLeaderboardDirty(sess.guildId);
     const st = applyStreakAndComputeBonus(
       sess.guildId,
       sess.userId,
@@ -171,8 +193,11 @@ async function awardDue(
       }
     }
   }
+
+  // advance session clock by the minutes we just processed
   sess.lastAwardMs += elapsedMin * 60_000;
 
+  // role rewards + audit
   if (res.leveledUp) {
     await applyLevelRewards(
       client,
@@ -273,7 +298,7 @@ export function registerVoiceHandler(client: Client) {
 
   // cleanup on process end
   client.once(Events.ClientReady, () => {
-    // no-op, placeholder if you later want to announce readiness
+    // placeholder
   });
   client.once(
     "shardDisconnect" as unknown as typeof Events.ShardDisconnect,

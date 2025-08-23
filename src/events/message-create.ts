@@ -1,3 +1,5 @@
+import { incBoss } from "../features/drops/store.js";
+import { trySpawnBoss } from "../features/drops/boss.js";
 import { onEligibleMessage } from "../features/drops/scheduler.js";
 import {
   checkActiveTrio,
@@ -155,6 +157,8 @@ export function registerMessageHandler(client: Client) {
         m.author.id,
         Date.now()
       );
+      incBoss(m.guildId!, "msg", 1);
+      trySpawnBoss(m.client, m.guildId!).catch(() => {});
     } else {
       metrics.inc("xp.award.msg.zero");
     }

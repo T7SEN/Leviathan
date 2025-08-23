@@ -1,4 +1,6 @@
 // src/commands/drops.ts
+
+import { spawnBossNow } from "../features/drops/boss.js";
 import {
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
@@ -12,7 +14,11 @@ import {
   setDropsConfig,
   resetDropsConfig,
 } from "../features/drops/config.js";
-import { getDropStats, topClaimers } from "../features/drops/store.js";
+import {
+  getDropStats,
+  topClaimers,
+  getBossState,
+} from "../features/drops/store.js";
 
 type TierOpt = "auto" | "common" | "uncommon" | "rare" | "epic" | "legendary";
 type Key =
@@ -79,6 +85,54 @@ data.addSubcommand((sc) =>
 );
 data.addSubcommand((sc) =>
   sc.setName("stats").setDescription("Guild drop stats (24h)")
+);
+data.addSubcommandGroup((g) =>
+  g
+    .setName("boss")
+    .setDescription("Boss capsule controls")
+    .addSubcommand((sc) =>
+      sc.setName("status").setDescription("Show boss counters")
+    )
+    .addSubcommand((sc) =>
+      sc.setName("spawn").setDescription("Force spawn boss (admin)")
+    )
+    .addSubcommand((sc) =>
+      sc
+        .setName("setchannel")
+        .setDescription("Set boss spawn channel")
+        .addStringOption((o) =>
+          o
+            .setName("value")
+            .setDescription('"here"|"none"|id/#mention')
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((sc) =>
+      sc
+        .setName("set")
+        .setDescription("Set boss config key")
+        .addStringOption((o) =>
+          o
+            .setName("key")
+            .setDescription(
+              "bossMsgs|bossVoiceMins|bossCooldownMs|bossBaseXp|bossEnabled"
+            )
+            .setRequired(true)
+            .addChoices(
+              { name: "bossMsgs", value: "bossMsgs" },
+              { name: "bossVoiceMins", value: "bossVoiceMins" },
+              { name: "bossCooldownMs", value: "bossCooldownMs" },
+              { name: "bossBaseXp", value: "bossBaseXp" },
+              { name: "bossEnabled", value: "bossEnabled" }
+            )
+        )
+        .addStringOption((o) =>
+          o
+            .setName("value")
+            .setDescription("number or on/off")
+            .setRequired(true)
+        )
+    )
 );
 data.addSubcommandGroup((g) =>
   g
@@ -188,6 +242,100 @@ export async function execute(i: ChatInputCommandInteraction) {
     ].join("\n");
 
     await ep(i, "Drops • Stats", body);
+    return;
+  }
+
+  // inside execute()
+  if (group === "boss" && sub === "status") {
+    const cfg = getDropsConfig(i.guildId);
+    const s = getBossState(i.guildId);
+    const body = [
+      `enabled: ${cfg.bossEnabled}`,
+      `msgs: ${s.msg} / ${cfg.bossMsgs}`,
+      `voiceMins: ${s.vmin} / ${cfg.bossVoiceMins}`,
+      `cooldownMs: ${cfg.bossCooldownMs}`,
+      `channel: ${cfg.bossChannelId ? `<#${cfg.bossChannelId}>` : "auto"}`,
+      `baseXp: ${cfg.bossBaseXp}`,
+    ].join("\n");
+    await ep(i, "Drops • Boss status", body);
+    return;
+  }
+
+  if (group === "boss" && sub === "spawn") {
+    const me = await i.guild!.members.fetch(i.user.id);
+    if (!me.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      await ep(i, "Drops", "Need Manage Server.");
+      return;
+    }
+    const ok = await spawnBossNow(i.client, i.guildId!); // no conditions
+    await ep(i, "Drops • Boss", ok ? "Spawned." : "No eligible channel.");
+    return;
+  }
+
+  if (group === "boss" && sub === "setchannel") {
+    const me = await i.guild!.members.fetch(i.user.id);
+    if (!me.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      await ep(i, "Drops", "Need Manage Server.");
+      return;
+    }
+    const raw = i.options.getString("value", true).trim();
+    let val: string | null;
+    if (/^(none|null)$/i.test(raw)) val = null;
+    else if (/^here$/i.test(raw)) val = i.channelId;
+    else {
+      const id = raw.replace(/[<#>]/g, "");
+      if (!/^\d{5,}$/.test(id)) {
+        await ep(i, "Drops • Boss", "Invalid channel id.");
+        return;
+      }
+      val = id;
+    }
+    const next = setDropsConfig(i.guildId, { bossChannelId: val });
+    await ep(
+      i,
+      "Drops • Boss",
+      `channel → ${next.bossChannelId ? `<#${next.bossChannelId}>` : "auto"}`
+    );
+    return;
+  }
+
+  if (group === "boss" && sub === "set") {
+    const me = await i.guild!.members.fetch(i.user.id);
+    if (!me.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      await ep(i, "Drops", "Need Manage Server.");
+      return;
+    }
+    type BossKey =
+      | "bossMsgs"
+      | "bossVoiceMins"
+      | "bossCooldownMs"
+      | "bossBaseXp"
+      | "bossEnabled";
+    const key = i.options.getString("key", true) as BossKey;
+    const raw = i.options.getString("value", true);
+
+    const patch: any = {};
+    if (key === "bossEnabled") {
+      patch.bossEnabled = /^(1|true|on|yes)$/i.test(raw);
+    } else {
+      const v = Number(raw);
+      if (!Number.isFinite(v) || v < 0) {
+        await ep(i, "Drops • Boss", "Value must be a non-negative number.");
+        return;
+      }
+      patch[key] = Math.floor(v);
+    }
+
+    const next = setDropsConfig(i.guildId, patch);
+    const body = [
+      `enabled: ${next.bossEnabled}`,
+      `msgs: ${next.bossMsgs}`,
+      `voiceMins: ${next.bossVoiceMins}`,
+      `cooldownMs: ${next.bossCooldownMs}`,
+      `channel: ${next.bossChannelId ? `<#${next.bossChannelId}>` : "auto"}`,
+      `baseXp: ${next.bossBaseXp}`,
+    ].join("\n");
+    await ep(i, "Drops • Boss", body);
     return;
   }
 

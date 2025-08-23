@@ -19,6 +19,8 @@ export type SpawnOpts = {
   decayPct?: number;
   forceTier?: Tier | "auto";
   targetUserId?: string | null;
+  variant?: "normal";
+  baseXpOverride?: number;
 };
 
 export async function spawnDrop(
@@ -36,7 +38,7 @@ export async function spawnDrop(
       ? (opts.forceTier as Tier)
       : null;
   const tier: Tier = forced ?? pickTier();
-  const baseXp = TIER_XP[tier];
+  const baseXp = Math.max(1, Math.floor(opts.baseXpOverride ?? TIER_XP[tier]));
   const dropId = nanoid(10);
   const channelId = (ch as any).id as string;
   const seed = auditableSeed(`${guildId}|${channelId}|${dropId}`);
