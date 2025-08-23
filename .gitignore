@@ -138,7 +138,11 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# SQLite files
+db
 db/leviathan.sqlite-shm
 db/leviathan.sqlite-wal
-.vscode
 db/leviathan.sqlite
+
+# VSCode settings
+.vscode
