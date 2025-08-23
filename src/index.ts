@@ -8,6 +8,7 @@ import { installGlobalErrorLogger } from "./lib/global-error-logger.js";
 import { installObservability } from "./lib/observability.js";
 import { startLeaderboardWorker } from "./features/leaderboard/rollup.js";
 import { startDropsSweeper } from "./features/drops/sweeper.js";
+import { installDbHealth } from "./lib/db-health.js";
 
 type LogLevel = "error" | "warn" | "info" | "debug";
 const LEVEL_ORDER: Record<LogLevel, number> = {
@@ -55,6 +56,7 @@ async function main() {
 
   installGlobalErrorLogger(client);
   installObservability(client);
+  installDbHealth(client);
 
   await registerInteractionHandler(client);
   registerMessageHandler(client);
