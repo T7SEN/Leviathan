@@ -16,7 +16,7 @@ import {
   stripLevelRoles,
   stripLevelRolesFromGuild,
 } from "../features/leveling/role-rewards.js";
-import { replyEmbedText } from "../lib/embeds.js";
+import { replyEmbedText, makeEmbed } from "../lib/embeds.js";
 
 export const data = new SlashCommandBuilder()
   .setName("leveladmin")
@@ -149,44 +149,52 @@ export async function execute(i: ChatInputCommandInteraction) {
   }
 
   if (sub === "resetbulk") {
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+
     const confirmed = i.options.getBoolean("confirm", true);
     if (!confirmed) {
-      await reply(i, "Aborted. Set confirm=true to proceed.");
+      await i.editReply({ content: "Aborted. Set confirm=true to proceed." });
       return;
     }
 
     const scope = i.options.getString("scope", true);
 
-    // ALL: reset every profile, then strip all level roles
+    // ALL: reset every profile, then strip all level-roles
     if (scope === "all") {
       const { resetGuildProfiles } = await import(
         "../features/leveling/sqlite-store.js"
       );
-      const rows = resetGuildProfiles(i.guildId); // returns number of rows reset
+      const rows = resetGuildProfiles(i.guildId);
+
       const stats = await stripLevelRolesFromGuild(i.client, i.guildId!);
-      await replyEmbedText(
-        i,
-        "Level admin",
-        `bulk reset (all) complete\nrows: ${rows}\nroles removed: ${stats.removals} from ${stats.members} member(s)`,
-        true
-      );
+      await i.editReply({
+        embeds: [
+          makeEmbed(
+            "Level admin",
+            [
+              "bulk reset (all) complete",
+              `rows: ${rows}`,
+              `roles removed: ${stats.removals} from ${stats.members} member(s)`,
+            ].join("\n")
+          ),
+        ],
+      });
       return;
     }
 
-    // ROLE: reset only members with a given role, then strip roles from them
+    // ROLE: reset only members with a given role, then strip those level-roles
     const opt = i.options.getRole("role", true);
-    // ensure a Guild Role, not APIRole
     const role = await i.guild!.roles.fetch(opt.id);
     if (!role) {
-      await reply(i, "role not found");
+      await i.editReply({ content: "Role not found." });
       return;
     }
 
-    // fetch full member list to include offline members
+    // include offline members
     await i.guild!.members.fetch();
-    const ids: string[] = Array.from(role.members.keys());
+    const ids = Array.from(role.members.keys());
     if (ids.length === 0) {
-      await reply(i, "No members found with that role.");
+      await i.editReply({ content: "No members found with that role." });
       return;
     }
 
@@ -196,12 +204,18 @@ export async function execute(i: ChatInputCommandInteraction) {
     const rows = resetUserProfiles(i.guildId, ids);
     const stats = await stripLevelRoles(i.client, i.guildId!, ids);
 
-    await replyEmbedText(
-      i,
-      "Level admin",
-      `bulk reset (role ${role}) complete\nrows: ${rows}\nroles removed: ${stats.removals} from ${stats.members} member(s)`,
-      true
-    );
+    await i.editReply({
+      embeds: [
+        makeEmbed(
+          "Level admin",
+          [
+            `bulk reset (role ${role}) complete`,
+            `rows: ${rows}`,
+            `roles removed: ${stats.removals} from ${stats.members} member(s)`,
+          ].join("\n")
+        ),
+      ],
+    });
     return;
   }
 
@@ -227,5 +241,3 @@ export async function execute(i: ChatInputCommandInteraction) {
   );
   return;
 }
-
-export async function execute_resetbulk(i: ChatInputCommandInteraction) {}
