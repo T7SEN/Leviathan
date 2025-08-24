@@ -1,3 +1,4 @@
+// src/events/interaction-create.ts
 import {
   Client,
   Events,
@@ -6,7 +7,7 @@ import {
 } from "discord.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { actionLogger } from "../lib/action-logger.js";
 import { metrics } from "../obs/metrics.js";
 import { handleClaimButton } from "../features/drops/claim.js";
@@ -16,48 +17,44 @@ type CommandModule = {
   execute: (i: ChatInputCommandInteraction) => Promise<void>;
 };
 
-async function dirExists(p: string): Promise<boolean> {
-  try {
-    const s = await fs.stat(p);
-    return s.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-async function findCommandDirs(): Promise<string[]> {
-  const candidates = [
-    path.resolve("src/commands"),
-    path.resolve("dist/commands"),
-  ];
-  const exists = await Promise.all(candidates.map(dirExists));
-  return candidates.filter((_, i) => exists[i]);
+function commandsDir(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // when running dev:   here = src/events  → ../commands = src/commands
+  // when running dist:  here = dist/src/events → ../commands = dist/src/commands
+  return path.resolve(here, "../commands");
 }
 
 async function readCommandFiles(dir: string): Promise<string[]> {
-  const es = await fs.readdir(dir, { withFileTypes: true });
-  return es
-    .filter((e) => e.isFile())
-    .map((e) => e.name)
-    .filter((n) => n.endsWith(".ts") || n.endsWith(".js"))
-    .filter((n) => !n.endsWith(".d.ts"))
-    .map((n) => path.join(dir, n));
+  try {
+    const es = await fs.readdir(dir, { withFileTypes: true });
+    return es
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .filter(
+        (n) => (n.endsWith(".js") || n.endsWith(".ts")) && !n.endsWith(".d.ts")
+      )
+      .map((n) => path.join(dir, n));
+  } catch {
+    return [];
+  }
 }
 
 async function loadCommands(): Promise<Map<string, CommandModule>> {
   const map = new Map<string, CommandModule>();
-  const dirs = await findCommandDirs();
-  for (const dir of dirs) {
-    const files = await readCommandFiles(dir);
-    for (const file of files) {
+  const dir = commandsDir();
+  const files = await readCommandFiles(dir);
+  for (const file of files) {
+    try {
       const url = pathToFileURL(file).href;
-      // dynamic import for ESM
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const mod: any = await import(url);
       const data = mod.data ?? mod.default?.data;
       const execute = mod.execute ?? mod.default?.execute;
       if (!data || !execute || typeof data.name !== "string") continue;
       map.set(data.name, { data, execute });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("command load failed:", file, err);
     }
   }
   return map;
@@ -76,6 +73,7 @@ export async function registerInteractionHandler(client: Client) {
     }
     if (!interaction.isChatInputCommand()) return;
     metrics.inc(`cmd.${interaction.commandName}.calls`);
+
     const cmd = commands.get(interaction.commandName);
     if (!cmd) {
       const msg = "Unknown command. Did you deploy the latest set?";
@@ -92,6 +90,7 @@ export async function registerInteractionHandler(client: Client) {
       }
       return;
     }
+
     try {
       await cmd.execute(interaction);
       await actionLogger(interaction.client).logCommand(interaction, "ok");
