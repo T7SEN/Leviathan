@@ -1,3 +1,4 @@
+// src/features/engine.ts
 import { randomInt as nodeRandomInt } from "node:crypto";
 import { deterministicInt } from "../../lib/detrand.js";
 
@@ -52,6 +53,20 @@ export const defaultPolicy: LevelPolicy = {
   xpPerMessageMin: 15,
   xpPerMessageMax: 25,
 };
+
+function sanitizePolicy(p: LevelPolicy): LevelPolicy {
+  let min = Math.floor(p.xpPerMessageMin);
+  let max = Math.floor(p.xpPerMessageMax);
+  if (min < 0) min = 0;
+  if (max < 0) max = 0;
+  if (max < min) {
+    const t = min;
+    min = max;
+    max = t;
+  }
+  const minIntervalMs = Math.max(0, Math.floor(p.minIntervalMs));
+  return { minIntervalMs, xpPerMessageMin: min, xpPerMessageMax: max };
+}
 
 /**
  * XP required to advance from `level` → `level + 1`.
@@ -126,7 +141,7 @@ export class LevelingEngine {
 
   constructor(store: LevelStore, policy: LevelPolicy = defaultPolicy) {
     this.store = store;
-    this.policy = policy;
+    this.policy = sanitizePolicy(policy);
   }
 
   async awardMessageXp(
@@ -140,7 +155,7 @@ export class LevelingEngine {
     awarded: number;
     leveledUp: boolean;
   }> {
-    const policy = overridePolicy ?? this.policy;
+    const policy = sanitizePolicy(overridePolicy ?? this.policy);
     const prev = (await this.store.get(guildId, userId)) ?? {
       userId,
       guildId,
@@ -167,7 +182,7 @@ export class LevelingEngine {
           policy.xpPerMessageMax,
           randKey
         )
-      : nodeRandomInt(policy.xpPerMessageMin, policy.xpPerMessageMax);
+      : nodeRandomInt(policy.xpPerMessageMin, policy.xpPerMessageMax + 1);
 
     const newTotal = prev.xp + add;
     const newLevel = levelFromTotalXp(newTotal);

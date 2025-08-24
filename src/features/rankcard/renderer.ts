@@ -1,3 +1,4 @@
+// src/features/rankcard/renderer.ts
 import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
 import type { User } from "discord.js";
 import { getRankStyle } from "./style.js";
