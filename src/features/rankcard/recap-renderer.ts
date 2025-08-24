@@ -3,6 +3,7 @@ import type { User } from "discord.js";
 import path from "node:path";
 import fs from "node:fs";
 import { getRankStyle } from "./style.js";
+import { levelFromTotalXp } from "../leveling/engine.js";
 
 try {
   const REG =
@@ -121,12 +122,13 @@ export async function renderSeasonRecap(p: {
     ctx.restore();
 
     // text
+    const lvl = levelFromTotalXp(t.xp);
     ctx.fillStyle = fg;
     ctx.font = 'bold 22px "Noto Sans","Segoe UI",Arial';
     ctx.fillText(`#${t.rank} ${t.user.username}`, x + 24 + AV + 12, y + 48);
     ctx.font = '20px "Noto Sans","Segoe UI",Arial';
     ctx.fillStyle = sub;
-    ctx.fillText(`L${t.level + 1} • ${t.xp} XP`, x + 24 + AV + 12, y + 80);
+    ctx.fillText(`L${lvl + 1} • ${t.xp} XP`, x + 24 + AV + 12, y + 80);
 
     // medal
     const medal = ["#fbbf24", "#9ca3af", "#c084fc"][idx] ?? "#94a3b8";
@@ -157,8 +159,9 @@ export async function renderSeasonRecap(p: {
 
   ctx.fillStyle = fg;
   ctx.font = 'bold 28px "Noto Sans","Segoe UI",Arial';
+  const meLvl = levelFromTotalXp(p.me.xp);
   ctx.fillText(
-    `You • #${p.me.rank} • L${p.me.level + 1} • ${p.me.xp} XP`,
+    `You • #${p.me.rank} • L${meLvl + 1} • ${p.me.xp} XP`,
     88 + AVM + 16,
     meY + 64
   );
