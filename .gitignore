@@ -146,3 +146,8 @@ db/leviathan.sqlite
 
 # VSCode settings
 .vscode
+
+# runtime data
+/db/
+*.sqlite
+/data/*.db
