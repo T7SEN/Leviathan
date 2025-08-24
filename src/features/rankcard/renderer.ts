@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
 import type { User } from "discord.js";
 import { getRankStyle } from "./style.js";
-import { xpToNext, levelFromTotalXp } from "../leveling/engine.js";
+import { xpToNext } from "../leveling/engine.js";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -203,14 +203,13 @@ export async function renderRankCard(inp: Inputs): Promise<Buffer> {
   }
 
   // meta
-  const level = levelFromTotalXp(inp.totalXp);
   ctx.font = '28px "Noto Sans","Segoe UI",Arial';
   ctx.fillStyle = sub;
-  ctx.fillText(`Level ${level + 1}  •  Rank #${inp.rank}`, 272, 160);
+  ctx.fillText(`Level ${inp.level}  •  Rank #${inp.rank}`, 272, 160);
 
   // progress bar
-  const need = level < 15 ? xpToNext(level) : Infinity;
-  const have = inp.totalXp - xpAtLevelStart(level);
+  const need = inp.level < 15 ? xpToNext(inp.level) : Infinity;
+  const have = inp.totalXp - xpAtLevelStart(inp.level);
   const pct = Number.isFinite(need) ? clamp(have / need, 0, 1) : 1;
   const barX = 272,
     barY = 200,

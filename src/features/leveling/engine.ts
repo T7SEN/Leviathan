@@ -19,7 +19,7 @@ const XP_SCALE: number = Number(process.env.LEVEL_XP_SCALE ?? "1") || 1;
 
 /**
  * Precise per-level control: XP needed to go from L → L+1.
- * Include 0 to control 0→1, 1 to control 1→2, etc. Omitted levels use the base formula.
+ * Only include levels you want to override. Others use the base formula.
  * Example values shown; adjust or leave {} to disable overrides.
  */
 const LEVEL_XP_OVERRIDE: Record<number, number> = {
@@ -120,27 +120,13 @@ export class MemoryLevelStore implements LevelStore {
   }
 }
 
-function sanitizePolicy(p: LevelPolicy): LevelPolicy {
-  let min = Math.floor(p.xpPerMessageMin);
-  let max = Math.floor(p.xpPerMessageMax);
-  if (min < 0) min = 0;
-  if (max < 0) max = 0;
-  if (max < min) {
-    const t = min;
-    min = max;
-    max = t;
-  }
-  const minIntervalMs = Math.max(0, Math.floor(p.minIntervalMs));
-  return { minIntervalMs, xpPerMessageMin: min, xpPerMessageMax: max };
-}
-
 export class LevelingEngine {
   private store: LevelStore;
   private policy: LevelPolicy;
 
   constructor(store: LevelStore, policy: LevelPolicy = defaultPolicy) {
     this.store = store;
-    this.policy = sanitizePolicy(policy);
+    this.policy = policy;
   }
 
   async awardMessageXp(
@@ -181,7 +167,7 @@ export class LevelingEngine {
           policy.xpPerMessageMax,
           randKey
         )
-      : nodeRandomInt(policy.xpPerMessageMin, policy.xpPerMessageMax + 1);
+      : nodeRandomInt(policy.xpPerMessageMin, policy.xpPerMessageMax);
 
     const newTotal = prev.xp + add;
     const newLevel = levelFromTotalXp(newTotal);
