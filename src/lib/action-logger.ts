@@ -1,62 +1,118 @@
+// src/lib/action-logger.ts
 import type {
   Client,
   Channel,
   GuildTextBasedChannel,
   ChatInputCommandInteraction,
 } from "discord.js";
-import { PermissionFlagsBits } from "discord.js";
+import { PermissionFlagsBits, EmbedBuilder } from "discord.js";
+
+type Outcome = "ok" | "warn" | "error" | "info";
+
+const LOG_COLORS = {
+  ok: 0x22c55e,
+  info: 0x3b82f6,
+  warn: 0xf59e0b,
+  error: 0xef4444,
+} as const;
 
 function pickChannelId(override?: string): string | null {
-  const v = override || process.env.ACTION_LOG_CHANNEL_ID || null;
+  const v =
+    override ||
+    process.env.ACTION_LOG_CHANNEL_ID ||
+    process.env.LOG_CHANNEL_ID ||
+    null;
   return v && v.length > 0 ? v : null;
 }
 
 function asGuildText(ch: Channel | null): GuildTextBasedChannel | null {
   if (!ch) return null;
+  // @ts-ignore runtime guard
   if (typeof (ch as any).isTextBased !== "function") return null;
+  // @ts-ignore runtime guard
   if (!(ch as any).isTextBased()) return null;
-  return "guild" in ch && (ch as any).guild
-    ? (ch as GuildTextBasedChannel)
-    : null;
+  // @ts-ignore ensure guild-bound channel
+  if (!(ch as any).guild) return null;
+  return ch as unknown as GuildTextBasedChannel;
 }
 
-function clip(s: string, n = 500): string {
-  return s.length > n ? s.slice(0, n) + "…" : s;
+function buildLogEmbed(
+  title: string,
+  lines: string[],
+  severity: keyof typeof LOG_COLORS = "info"
+) {
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(lines.join("\n"))
+    .setColor(LOG_COLORS[severity])
+    .setTimestamp();
 }
 
-function isMod(i: ChatInputCommandInteraction): boolean {
-  const p = i.memberPermissions;
-  if (!p) return false;
-  const flags = [
-    PermissionFlagsBits.Administrator,
-    PermissionFlagsBits.ManageGuild,
-    PermissionFlagsBits.ManageMessages,
-    PermissionFlagsBits.ModerateMembers,
-    PermissionFlagsBits.KickMembers,
-    PermissionFlagsBits.BanMembers,
-  ];
-  return flags.some((f) => p.has(f));
+function clip(s: string, max = 900) {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 3)}...`;
 }
 
-class ActionLogger {
+export class ActionLogger {
   private client: Client;
-  private channelId: string | null;
 
-  constructor(client: Client, channelId?: string) {
+  constructor(client: Client) {
     this.client = client;
-    this.channelId = pickChannelId(channelId);
   }
 
-  private async send(content: string) {
-    if (!this.channelId) return;
-    if (!this.client.isReady()) return;
+  private async pickChannel(
+    overrideId?: string
+  ): Promise<GuildTextBasedChannel | null> {
+    const id = pickChannelId(overrideId);
+    if (!id) return null;
     try {
-      const ch = await this.client.channels.fetch(this.channelId);
-      const text = asGuildText(ch);
-      if (!text) return;
-      await text.send({ content });
+      const ch = await this.client.channels.fetch(id).catch(() => null);
+      const asText = asGuildText(ch);
+      if (!asText) return null;
+      const me = asText.guild.members.me;
+      if (!me) return null;
+      const perms = asText.permissionsFor(me);
+      const canSend =
+        perms?.has(
+          PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel
+        ) === true;
+      if (!canSend) return null;
+      return asText;
+    } catch {
+      return null;
+    }
+  }
+
+  async send(content: string, overrideId?: string) {
+    const ch = await this.pickChannel(overrideId);
+    if (!ch) return;
+    try {
+      await ch.send({ content });
     } catch (e) {
-      // console fallback
+      // eslint-disable-next-line no-console
+      console.error("[Leviathan] action log send failed:", e);
+    }
+  }
+
+  async sendEmbed(embed: EmbedBuilder, overrideId?: string) {
+    const ch = await this.pickChannel(overrideId);
+    if (!ch) return;
+    try {
+      const me = ch.guild.members.me;
+      const perms = ch.permissionsFor(me!);
+      const canEmbed = perms?.has(PermissionFlagsBits.EmbedLinks) === true;
+      if (canEmbed) {
+        await ch.send({ embeds: [embed] });
+      } else {
+        const text = [
+          embed.data.title ?? "Log",
+          "",
+          ...(embed.data.description ? [embed.data.description] : []),
+        ].join("\n");
+        await ch.send({ content: text });
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
       console.error("[Leviathan] action log send failed:", e);
     }
   }
@@ -67,33 +123,37 @@ class ActionLogger {
     guildId: string;
     channelId: string;
   }) {
-    const msg = `[level-up] <@${p.userId}> → L${p.level} in <#${p.channelId}>`;
-    await this.send(msg);
+    const lines = [`<@${p.userId}> → **L${p.level}**`, `in <#${p.channelId}>`];
+    const embed = buildLogEmbed("Level up", lines, "ok");
+    await this.sendEmbed(embed);
   }
 
   async logCommand(
-    i: ChatInputCommandInteraction,
-    outcome: "ok" | "error",
+    interaction: ChatInputCommandInteraction,
+    outcome: Outcome,
     err?: unknown
   ) {
-    let sub: string | null = null;
-    try {
-      sub = i.options.getSubcommand(false);
-    } catch {
-      sub = null;
+    const user = `<@${interaction.user.id}>`;
+    const where = interaction.channel ? `<#${interaction.channel.id}>` : "(DM)";
+    const path = `/${interaction.commandName}`;
+    const isAdmin =
+      interaction.memberPermissions?.has("Administrator") === true;
+    const mod = isAdmin ? "admin" : "user";
+
+    const lines: string[] = [
+      `${user} ran **${path}**`,
+      `in ${where} • mode=${mod} • status=${outcome}`,
+    ];
+
+    if (outcome === "error" && err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const short = clip(msg, 300);
+      lines.push("", "```", short, "```");
     }
-    const path = `/${i.commandName}${sub ? " " + sub : ""}`;
-    const who = `${i.user.tag} (${i.user.id})`;
-    const where = i.channelId ? `<#${i.channelId}>` : "(no-channel)";
-    const mod = isMod(i) ? "yes" : "no";
-    let extra = "";
-    if (outcome === "error") {
-      const msg = err instanceof Error ? err.message : String(err ?? "");
-      extra = ` | err=${clip(msg)}`;
-    }
-    await this.send(
-      `[cmd] ${who} ran ${path} in ${where} | mod=${mod} | ${outcome}${extra}`
-    );
+
+    const sev: Outcome = outcome === "error" ? "error" : "info";
+    const embed = buildLogEmbed("Command", lines, sev);
+    await this.sendEmbed(embed);
   }
 }
 

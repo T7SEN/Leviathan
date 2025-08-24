@@ -1,4 +1,8 @@
+// src/lib/global-error-logger.ts
 import type { Client, Channel, GuildTextBasedChannel } from "discord.js";
+import { PermissionFlagsBits, EmbedBuilder } from "discord.js";
+
+const ERR_COLOR = 0xef4444;
 
 function pickChannelId(override?: string): string | null {
   const v =
@@ -9,63 +13,92 @@ function pickChannelId(override?: string): string | null {
   return v && v.length > 0 ? v : null;
 }
 
+function asGuildText(ch: Channel | null): GuildTextBasedChannel | null {
+  if (!ch) return null;
+  // @ts-ignore runtime guard
+  if (typeof (ch as any).isTextBased !== "function") return null;
+  // @ts-ignore runtime guard
+  if (!(ch as any).isTextBased()) return null;
+  // @ts-ignore ensure guild-bound channel
+  if (!(ch as any).guild) return null;
+  return ch as unknown as GuildTextBasedChannel;
+}
+
+function clip(s: string, max = 1500) {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 3)}...`;
+}
+
 function fmt(err: unknown, ctx: string): string {
   let body = "";
   if (err instanceof Error) {
     const head = `${err.name}: ${err.message}`;
     const stack = err.stack || "";
-    body = `${head}\n${stack}`;
-  } else if (typeof err === "string") {
-    body = err;
+    if (stack.includes(err.message)) {
+      body = stack;
+    } else {
+      body = `${head}\n${stack}`;
+    }
   } else {
-    try {
-      body = JSON.stringify(err);
-    } catch {
-      body = String(err);
-    }
+    body = String(err);
   }
-  const prefix = `[Leviathan] ${ctx}`;
-  const code = "```";
-  const max = 1900;
-  const clipped = body.length > max ? body.slice(0, max) + "…" : body;
-  return `${prefix}\n${code}\n${clipped}\n${code}`;
+  const lines = [`where=${ctx}`, "", clip(body)];
+  return lines.join("\n");
 }
 
-function asGuildText(ch: Channel | null): GuildTextBasedChannel | null {
-  if (!ch) return null;
-  // v14 runtime type guard
-  if (typeof (ch as any).isTextBased !== "function") return null;
-  if (!(ch as any).isTextBased()) return null;
-  // ensure it belongs to a guild so .send exists
-  return "guild" in ch && (ch as any).guild
-    ? (ch as GuildTextBasedChannel)
-    : null;
+function buildErrorEmbed(ctx: string, message: string) {
+  return new EmbedBuilder()
+    .setTitle("Unhandled error")
+    .setDescription(
+      ["**context:** " + ctx, "", "```", message, "```"].join("\n")
+    )
+    .setColor(ERR_COLOR)
+    .setTimestamp();
 }
 
-export function installGlobalErrorLogger(
+async function send(
   client: Client,
-  options?: { channelId?: string }
+  payload: string | { embeds: EmbedBuilder[] },
+  overrideId?: string
 ) {
-  const channelId = pickChannelId(options?.channelId);
-
-  async function send(content: string) {
-    if (!channelId) return;
-    if (!client.isReady()) return;
-    try {
-      const ch = await client.channels.fetch(channelId);
-      const text = asGuildText(ch);
-      if (!text) return;
-      await text.send({ content });
-    } catch (e) {
-      console.error("[Leviathan] log send failed:", e);
+  const id = pickChannelId(overrideId);
+  if (!id) return;
+  const ch = asGuildText(await client.channels.fetch(id).catch(() => null));
+  if (!ch) return;
+  const me = ch.guild.members.me;
+  const perms = ch.permissionsFor(me!);
+  const canEmbed = perms?.has(PermissionFlagsBits.EmbedLinks) === true;
+  try {
+    if (typeof payload === "string") {
+      await ch.send({ content: payload });
+    } else {
+      if (canEmbed) {
+        await ch.send(payload);
+      } else {
+        const e =
+          Array.isArray(payload.embeds) && payload.embeds.length > 0
+            ? payload.embeds[0]
+            : null;
+        const title = e?.data?.title ?? "Error";
+        const desc = e?.data?.description ?? "";
+        const text = [title, "", desc].join("\n");
+        await ch.send({ content: text });
+      }
     }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[Leviathan] error log send failed:", err);
   }
+}
 
+export function installGlobalErrorLogger(client: Client) {
   function handler(ctx: string) {
     return async (err: unknown) => {
-      const msg = fmt(err, ctx);
-      console.error(msg);
-      await send(msg);
+      const message = fmt(err, ctx);
+      // eslint-disable-next-line no-console
+      console.error(message);
+      const embed = buildErrorEmbed(ctx, message);
+      await send(client, { embeds: [embed] });
     };
   }
 
