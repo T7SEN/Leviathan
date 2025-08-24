@@ -60,7 +60,10 @@ export function getLevelRoleIds(guildId: string): string[] {
   return rows.map((r) => r.roleId);
 }
 
-async function fetchRole(g: Guild, roleId: string): Promise<Role | null> {
+export async function fetchRole(
+  g: Guild,
+  roleId: string
+): Promise<Role | null> {
   const cached = g.roles.cache.get(roleId) || null;
   if (cached) return cached;
   try {
@@ -70,7 +73,7 @@ async function fetchRole(g: Guild, roleId: string): Promise<Role | null> {
   }
 }
 
-function canManageRole(g: Guild, role: Role): boolean {
+export function canManageRole(g: Guild, role: Role): boolean {
   const me = g.members.me;
   if (!me) return false;
   if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) return false;
