@@ -8,7 +8,28 @@ export type LevelProfile = {
   level: number;
   lastAwardMs: number | null;
 };
+
 export const MAX_LEVEL = 15;
+
+/**
+ * Global scale for XP required per level.
+ * Example: LEVEL_XP_SCALE=1.25 → +25% harder across the board.
+ */
+const XP_SCALE: number = Number(process.env.LEVEL_XP_SCALE ?? "1") || 1;
+
+/**
+ * Precise per-level control: XP needed to go from L → L+1.
+ * Only include levels you want to override. Others use the base formula.
+ * Example values shown; adjust or leave {} to disable overrides.
+ */
+const LEVEL_XP_OVERRIDE: Record<number, number> = {
+  // 1: 60,
+  // 2: 110,
+  // 3: 170,
+  // ...
+  // 14: 1490,
+  // 15: 999999999, // effectively prevents 15 → 16
+};
 
 export interface LevelStore {
   get: (guildId: string, userId: string) => Promise<LevelProfile | null>;
@@ -32,12 +53,23 @@ export const defaultPolicy: LevelPolicy = {
   xpPerMessageMax: 25,
 };
 
+/**
+ * XP required to advance from `level` → `level + 1`.
+ * - Stops at MAX_LEVEL
+ * - Uses per-level override if present, else base formula 8L^2 + 25L
+ * - Applies global XP_SCALE
+ * - Always returns at least 1 for L=0 edge case
+ */
 export function xpToNext(level: number): number {
-  // Stop progression at cap
   if (level >= MAX_LEVEL) return Number.POSITIVE_INFINITY;
-  // 8L^2 + 25L, clamp so L=0 costs > 0 XP
-  const v = 8 * (level * level) + 25 * level;
-  return v > 0 ? v : 1;
+
+  const base =
+    LEVEL_XP_OVERRIDE[level] !== undefined
+      ? LEVEL_XP_OVERRIDE[level]
+      : 8 * (level * level) + 25 * level;
+
+  const scaled = Math.ceil((base > 0 ? base : 1) * XP_SCALE);
+  return scaled > 0 ? scaled : 1;
 }
 
 export function levelFromTotalXp(totalXp: number): number {
@@ -152,6 +184,7 @@ export class LevelingEngine {
 
     return { profile: next, awarded: add, leveledUp };
   }
+
   async awardRawXp(
     guildId: string,
     userId: string,
