@@ -126,7 +126,7 @@ export async function renderSeasonRecap(p: {
     ctx.fillText(`#${t.rank} ${t.user.username}`, x + 24 + AV + 12, y + 48);
     ctx.font = '20px "Noto Sans","Segoe UI",Arial';
     ctx.fillStyle = sub;
-    ctx.fillText(`L${t.level} • ${t.xp} XP`, x + 24 + AV + 12, y + 80);
+    ctx.fillText(`L${t.level + 1} • ${t.xp} XP`, x + 24 + AV + 12, y + 80);
 
     // medal
     const medal = ["#fbbf24", "#9ca3af", "#c084fc"][idx] ?? "#94a3b8";
@@ -158,7 +158,7 @@ export async function renderSeasonRecap(p: {
   ctx.fillStyle = fg;
   ctx.font = 'bold 28px "Noto Sans","Segoe UI",Arial';
   ctx.fillText(
-    `You • #${p.me.rank} • L${p.me.level} • ${p.me.xp} XP`,
+    `You • #${p.me.rank} • L${p.me.level + 1} • ${p.me.xp} XP`,
     88 + AVM + 16,
     meY + 64
   );

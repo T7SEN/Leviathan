@@ -35,7 +35,8 @@ export async function execute(i: ChatInputCommandInteraction) {
   const profile = await getProfile(i.guildId, target.id);
 
   const body =
-    `<@${target.id}> • Level ${profile.level}\n` + `Total XP: ${profile.xp}`;
+    `<@${target.id}> • Level ${profile.level + 1}\n` +
+    `Total XP: ${profile.xp}`;
 
   const rcDefault = (process.env.ENABLE_RANKCARDS ?? "1") !== "0";
   if (!getFlag(ENABLE_RANKCARDS, rcDefault)) {

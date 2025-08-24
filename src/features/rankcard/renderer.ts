@@ -205,7 +205,7 @@ export async function renderRankCard(inp: Inputs): Promise<Buffer> {
   // meta
   ctx.font = '28px "Noto Sans","Segoe UI",Arial';
   ctx.fillStyle = sub;
-  ctx.fillText(`Level ${inp.level}  •  Rank #${inp.rank}`, 272, 160);
+  ctx.fillText(`Level ${inp.level + 1}  •  Rank #${inp.rank}`, 272, 160);
 
   // progress bar
   const need = inp.level < 15 ? xpToNext(inp.level) : Infinity;
